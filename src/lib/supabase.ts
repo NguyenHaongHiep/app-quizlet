@@ -1,20 +1,111 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Configuration keys from environment variables or custom local config
-const SUPABASE_URL_DEFAULT = import.meta.env.VITE_SUPABASE_URL || '';
-const SUPABASE_ANON_KEY_DEFAULT = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+// 1. Environment Configuration Check:
+// Safe detection across Vite (import.meta.env) and Node/bundlers (process.env)
+const getEnvVar = (name: string): string => {
+  try {
+    if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[name]) {
+      return String(import.meta.env[name]).trim();
+    }
+  } catch {
+    // ignore
+  }
 
-// In case the user enters their credentials in the UI settings or .env
-export const getStoredSupabaseConfig = () => {
-  const localUrl = localStorage.getItem('quizstudy_supabase_url');
-  const localKey = localStorage.getItem('quizstudy_supabase_anon_key');
+  try {
+    if (typeof process !== 'undefined' && process.env && process.env[name]) {
+      return String(process.env[name]).trim();
+    }
+  } catch {
+    // ignore
+  }
+
+  return '';
+};
+
+const ENV_SUPABASE_URL =
+  getEnvVar('VITE_SUPABASE_URL') ||
+  getEnvVar('SUPABASE_URL');
+
+const ENV_SUPABASE_ANON_KEY =
+  getEnvVar('VITE_SUPABASE_ANON_KEY') ||
+  getEnvVar('SUPABASE_KEY') ||
+  getEnvVar('SUPABASE_ANON_KEY');
+
+// Helper to log helpful instructions in browser console when keys are not configured via environment
+export const checkAndLogSupabaseEnvStatus = () => {
+  const { url, key, source } = getEffectiveSupabaseConfig();
+  if (!url || !key) {
+    console.warn(
+      `%c[Supabase Config Warning] Missing Supabase API Keys!%c\n` +
+      `No VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY found in your environment.\n` +
+      `• The app is running smoothly in Fallback Mode (Guest / Offline or Browser Config).\n` +
+      `• To enable cloud sync permanently, create a '.env' file with:\n` +
+      `    VITE_SUPABASE_URL=https://your-project.supabase.co\n` +
+      `    VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\n` +
+      `• Or simply enter your Supabase URL & Anon Key in the app UI modal/settings.`,
+      'color: #f59e0b; font-weight: bold; font-size: 13px;',
+      'color: inherit;'
+    );
+  } else {
+    console.info(
+      `%c[Supabase Connected]%c Using Supabase configuration from ${source}: ${url}`,
+      'color: #10b981; font-weight: bold;',
+      'color: inherit;'
+    );
+  }
+};
+
+// Retrieve effective credentials: LocalStorage override has priority, fallback to environment
+export const getEffectiveSupabaseConfig = () => {
+  let localUrl = '';
+  let localKey = '';
+
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localUrl = localStorage.getItem('quizstudy_supabase_url') || '';
+      localKey = localStorage.getItem('quizstudy_supabase_anon_key') || '';
+    }
+  } catch (err) {
+    console.warn('LocalStorage is not available for Supabase config:', err);
+  }
+
+  if (localUrl && localKey) {
+    return {
+      url: localUrl,
+      key: localKey,
+      source: 'localStorage' as const,
+      isConfigured: true
+    };
+  }
+
+  if (ENV_SUPABASE_URL && ENV_SUPABASE_ANON_KEY) {
+    return {
+      url: ENV_SUPABASE_URL,
+      key: ENV_SUPABASE_ANON_KEY,
+      source: 'environment' as const,
+      isConfigured: true
+    };
+  }
+
   return {
-    url: localUrl || SUPABASE_URL_DEFAULT,
-    key: localKey || SUPABASE_ANON_KEY_DEFAULT
+    url: localUrl || ENV_SUPABASE_URL,
+    key: localKey || ENV_SUPABASE_ANON_KEY,
+    source: 'none' as const,
+    isConfigured: false
+  };
+};
+
+// Backward-compatible alias
+export const getStoredSupabaseConfig = () => {
+  const config = getEffectiveSupabaseConfig();
+  return {
+    url: config.url,
+    key: config.key
   };
 };
 
 export const setStoredSupabaseConfig = (url: string, key: string) => {
+  if (typeof window === 'undefined') return;
   if (url && key) {
     localStorage.setItem('quizstudy_supabase_url', url.trim());
     localStorage.setItem('quizstudy_supabase_anon_key', key.trim());
@@ -26,13 +117,21 @@ export const setStoredSupabaseConfig = (url: string, key: string) => {
 
 let supabaseInstance: SupabaseClient | null = null;
 
+/**
+ * Safely initializes Supabase with fallback checks.
+ * Prevents uncaught runtime crashes when keys are missing.
+ */
 export const getSupabase = (): SupabaseClient | null => {
-  const { url, key } = getStoredSupabaseConfig();
-  if (!url || !key) {
+  const { url, key, isConfigured } = getEffectiveSupabaseConfig();
+
+  if (!isConfigured || !url || !key) {
     return null;
   }
+
   if (!supabaseInstance) {
     try {
+      // Validate basic URL structure to avoid client constructor fatal crash
+      new URL(url);
       supabaseInstance = createClient(url, key, {
         auth: {
           persistSession: true,
@@ -41,24 +140,34 @@ export const getSupabase = (): SupabaseClient | null => {
         }
       });
     } catch (e) {
-      console.error('Failed to initialize Supabase client:', e);
+      console.warn('Failed to safely initialize Supabase client (check URL format):', e);
       return null;
     }
   }
+
   return supabaseInstance;
 };
 
-export const reinitializeSupabase = (url: string, key: string): SupabaseClient => {
+export const reinitializeSupabase = (url: string, key: string): SupabaseClient | null => {
   setStoredSupabaseConfig(url, key);
-  supabaseInstance = createClient(url.trim(), key.trim(), {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  });
-  return supabaseInstance;
+  try {
+    new URL(url.trim());
+    supabaseInstance = createClient(url.trim(), key.trim(), {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    });
+    return supabaseInstance;
+  } catch (e) {
+    console.error('Failed to initialize Supabase with provided credentials:', e);
+    return null;
+  }
 };
+
+// Automatically run the startup environment status check once
+checkAndLogSupabaseEnvStatus();
 
 // SQL Schema Reference for creating tables with Row Level Security (RLS)
 export const SUPABASE_SQL_SCHEMA = `-- 1. Bảng lưu Học phần (courses) với RLS
