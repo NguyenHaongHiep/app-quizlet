@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// 1. Environment Configuration Check:
-// Safe detection across Vite (import.meta.env) and Node/bundlers (process.env)
+// 1. Environment Configuration & Project Fallback
+// Safe detection across Vite (import.meta.env), Node/bundlers (process.env), and Project Defaults
 const getEnvVar = (name: string): string => {
   try {
     if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env[name]) {
@@ -22,14 +22,21 @@ const getEnvVar = (name: string): string => {
   return '';
 };
 
+// Cấu hình cố định dự án (Pre-configured Supabase Project for this web application)
+// Người dùng và học sinh vào ứng dụng được kết nối tự động, KHÔNG CẦN nhập cấu hình thủ công.
+export const DEFAULT_SUPABASE_URL = 'https://rghcvuceesmwxyikoxad.supabase.co';
+export const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_hNvWAnVjOK3glJdc01r-Qg_ldh8KLF3';
+
 const ENV_SUPABASE_URL =
   getEnvVar('VITE_SUPABASE_URL') ||
-  getEnvVar('SUPABASE_URL');
+  getEnvVar('SUPABASE_URL') ||
+  DEFAULT_SUPABASE_URL;
 
 const ENV_SUPABASE_ANON_KEY =
   getEnvVar('VITE_SUPABASE_ANON_KEY') ||
   getEnvVar('SUPABASE_KEY') ||
-  getEnvVar('SUPABASE_ANON_KEY');
+  getEnvVar('SUPABASE_ANON_KEY') ||
+  DEFAULT_SUPABASE_ANON_KEY;
 
 // Helper to log helpful instructions in browser console when keys are not configured via environment
 export const checkAndLogSupabaseEnvStatus = () => {
