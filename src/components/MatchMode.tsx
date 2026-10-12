@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
-import { ArrowLeft, Clock, RotateCcw, Trophy, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Clock, RotateCcw, Trophy, CheckCircle2, Sparkles, Check } from 'lucide-react';
 import { StudySet, Question } from '../types';
 
 interface MatchModeProps {
@@ -107,16 +107,28 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
       );
       setSelectedTileId(null);
 
-      // Kiểm tra hoàn thành tất cả
+      // Kiểm tra xem đã ghép hết chưa
       setTimeout(() => {
-        setTiles(current => {
-          const remaining = current.filter(t => !t.isMatched);
-          if (remaining.length === 0) {
-            handleGameWin();
+        setTiles(latest => {
+          const allMatched = latest.every(t => t.isMatched);
+          if (allMatched) {
+            clearInterval(timerRef.current);
+            setIsRunning(false);
+            setIsGameOver(true);
+            try {
+              confetti({
+                particleCount: 80,
+                spread: 70,
+                origin: { y: 0.6 },
+                colors: ['#5B2DFF', '#C8B4FF', '#10B981']
+              });
+            } catch (err) {
+              // safe fallback
+            }
           }
-          return current;
+          return latest;
         });
-      }, 50);
+      }, 300);
     } else {
       // GHÉP SAI
       setTiles(prev =>
@@ -135,30 +147,19 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
           )
         );
         setSelectedTileId(null);
-      }, 600);
+      }, 700);
     }
-  };
-
-  const handleGameWin = () => {
-    clearInterval(timerRef.current);
-    setIsRunning(false);
-    setIsGameOver(true);
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 }
-      });
-    } catch (e) {}
   };
 
   if (studySet.questions.length < 2) {
     return (
-      <div className="max-w-xl mx-auto px-4 py-12 text-center space-y-4">
-        <p className="text-sm text-slate-500">
-          Chế độ Ghép thẻ yêu cầu ít nhất 2 câu hỏi trong bộ thẻ.
-        </p>
-        <button onClick={onBack} className="px-4 py-2 text-xs font-semibold bg-indigo-600 text-white rounded-xl">
+      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
+        <h3 className="font-flow-serif text-2xl font-normal text-[#1F1F28]">Cần tối thiểu 2 câu hỏi</h3>
+        <p className="text-xs text-[#8E8E93]">Chế độ Ghép thẻ tính giờ yêu cầu tối thiểu 2 thuật ngữ trong bộ thẻ.</p>
+        <button
+          onClick={onBack}
+          className="mt-2 px-6 py-2.5 rounded-full text-xs font-semibold text-white bg-[#5B2DFF] shadow-[0_8px_20px_rgba(91,45,255,0.35)] cursor-pointer"
+        >
           Quay lại
         </button>
       </div>
@@ -166,115 +167,127 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-      {/* Top Bar */}
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-in fade-in duration-200">
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <button
             onClick={onBack}
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
+            style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
+            className="p-2 text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            title="Thoát trò chơi"
           >
-            <ArrowLeft className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4 text-[#5B2DFF]" />
           </button>
           <div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span>Trò chơi ghép thẻ</span>
-              <span aria-hidden="true">·</span>
-              <span>{studySet.title}</span>
+            <div className="flex items-center gap-2 text-[11px] font-medium text-[#8E8E93]">
+              <span className="uppercase tracking-wider">Ghép thẻ tốc độ</span>
+              <span aria-hidden="true">&bull;</span>
+              <span className="text-[#1F1F28] font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
             </div>
-            <h2 className="text-base font-bold text-slate-900 mt-0.5">
-              Ghép nối khái niệm và định nghĩa
+            <h2 className="font-flow-serif text-lg sm:text-xl font-normal text-[#1F1F28]">
+              Nối đúng cặp nhanh nhất
             </h2>
           </div>
         </div>
 
-        {/* Timer display */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-xl text-xs font-mono font-bold text-slate-800">
-            <Clock className="w-4 h-4 text-indigo-600" />
-            <span>{elapsedTime.toFixed(1)}s</span>
-          </div>
-
-          <button
-            onClick={initGame}
-            title="Bắt đầu lại"
-            className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl border border-slate-200 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
+        {/* Timer pill */}
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-black/[0.06] shadow-2xs">
+          <Clock className="w-4 h-4 text-[#5B2DFF]" />
+          <span className="font-mono text-sm font-semibold text-[#1F1F28]">
+            {elapsedTime.toFixed(1)}s
+          </span>
         </div>
       </div>
 
-      {/* Game board */}
+      {/* Màn hình chiến thắng khi hoàn thành */}
       {isGameOver ? (
-        <div className="bg-white rounded-2xl p-8 border border-slate-200 text-center shadow-sm space-y-4 max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600">
-            <Trophy className="w-8 h-8" />
+        <div
+          style={{
+            boxShadow: '0 16px 36px rgba(91, 45, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.02)',
+          }}
+          className="bg-white rounded-3xl p-8 sm:p-12 border border-black/[0.05] text-center space-y-6 animate-in zoom-in-95 duration-300 max-w-lg mx-auto"
+        >
+          <div
+            style={{ boxShadow: '0 8px 24px rgba(91, 45, 255, 0.35)' }}
+            className="w-16 h-16 mx-auto rounded-full bg-[#5B2DFF] text-white flex items-center justify-center"
+          >
+            <Trophy className="w-8 h-8 stroke-[2.2]" />
           </div>
 
-          <h3 className="text-xl font-bold text-slate-900">
-            Xuất sắc! Đã ghép hết các thẻ!
-          </h3>
-
-          <div className="text-3xl font-black text-indigo-600 font-mono">
-            {elapsedTime.toFixed(1)} giây
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#EDE8FF] text-[#5B2DFF] border border-[#5B2DFF]/15">
+              <Sparkles className="w-3 h-3" /> Thành tích xuất sắc
+            </div>
+            <h3 className="font-flow-serif text-3xl font-normal text-[#1F1F28]">Hoàn thành thử thách!</h3>
+            <p className="text-xs text-[#8E8E93]">
+              Bạn đã ghép chính xác toàn bộ các cặp thuật ngữ và định nghĩa.
+            </p>
           </div>
 
-          <p className="text-xs text-slate-500">
-            Tốc độ ghi nhớ phản xạ của bạn rất ấn tượng!
-          </p>
+          <div className="p-5 rounded-2xl bg-[#FCFAF6] border border-black/[0.05]">
+            <p className="text-[11px] uppercase tracking-wider font-semibold text-[#8E8E93]">Thời gian hoàn thành</p>
+            <p className="font-flow-serif text-4xl font-medium text-[#5B2DFF] mt-1">
+              {elapsedTime.toFixed(1)} <span className="text-sm font-sans text-[#8E8E93]">giây</span>
+            </p>
+          </div>
 
-          <div className="flex items-center justify-center gap-3 pt-3">
+          <div className="flex justify-center gap-3 pt-2">
             <button
               onClick={initGame}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs font-semibold text-[#1F1F28] bg-[#FCFAF6] hover:bg-[#F3EFE6] border border-black/[0.06] transition-all hover:scale-105 active:scale-95 cursor-pointer"
             >
-              <RotateCcw className="w-4 h-4" />
-              <span>Chơi lại ván mới</span>
+              <RotateCcw className="w-3.5 h-3.5 text-[#5B2DFF]" />
+              <span>Chơi lại</span>
             </button>
             <button
               onClick={onBack}
-              className="px-5 py-2.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors"
+              style={{
+                backgroundColor: '#5B2DFF',
+                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
+              }}
+              className="px-7 py-3 rounded-full text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
             >
-              Về bộ thẻ
+              Trở về bộ thẻ
             </button>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+        /* Grid 12 ô thẻ (Lilac Flow Style) */
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
           {tiles.map(tile => {
+            const isSelected = selectedTileId === tile.id;
+
             if (tile.isMatched) {
               return (
                 <div
                   key={tile.id}
-                  className="min-h-[110px] rounded-2xl border border-emerald-100 bg-emerald-50/40 p-3.5 flex items-center justify-center text-center opacity-40 select-none"
+                  className="min-h-[110px] sm:min-h-[130px] rounded-2xl border border-dashed border-emerald-300/40 bg-emerald-50/20 flex flex-col items-center justify-center p-3 opacity-40 transition-opacity"
                 >
-                  <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                  <Check className="w-5 h-5 text-emerald-600" />
+                  <span className="text-[10px] text-emerald-700 font-medium mt-1">Đã khớp</span>
                 </div>
               );
             }
 
-            const isSelected = selectedTileId === tile.id;
+            let tileClasses = 'bg-white border-black/[0.06] text-[#1F1F28] hover:border-[#5B2DFF]/40 hover:bg-[#F4EFFE]';
+            if (isSelected) {
+              tileClasses = 'border-[#5B2DFF] bg-[#EDE8FF] text-[#5B2DFF] ring-2 ring-[#5B2DFF]/30 font-semibold shadow-[0_8px_20px_rgba(91,45,255,0.25)]';
+            } else if (tile.isWrong) {
+              tileClasses = 'border-rose-400 bg-rose-50 text-rose-900 animate-shake';
+            }
 
             return (
               <button
                 key={tile.id}
                 type="button"
                 onClick={() => handleTileClick(tile.id)}
-                className={`min-h-[110px] p-3.5 rounded-2xl border text-center flex flex-col justify-center items-center transition-all cursor-pointer select-none shadow-2xs ${
-                  tile.isWrong
-                    ? 'border-rose-400 bg-rose-50 text-rose-900 scale-95 ring-2 ring-rose-200'
-                    : isSelected
-                    ? 'border-indigo-600 bg-indigo-50 text-indigo-950 font-bold ring-2 ring-indigo-300 scale-102'
-                    : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-800'
-                }`}
+                style={{
+                  boxShadow: isSelected ? undefined : '0 10px 24px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.02)',
+                }}
+                className={`min-h-[110px] sm:min-h-[130px] p-4 rounded-2xl border text-xs sm:text-sm font-medium flex flex-col items-center justify-center text-center transition-all duration-200 cursor-pointer select-none ${tileClasses}`}
               >
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  {tile.isTerm ? 'Thuật ngữ' : 'Định nghĩa'}
-                </span>
-                <span className="text-xs font-medium leading-snug line-clamp-4">
-                  {tile.text}
-                </span>
+                <span className="line-clamp-4 leading-snug">{tile.text}</span>
               </button>
             );
           })}

@@ -47,7 +47,7 @@ export interface Course {
   code: string;                        // Mã học phần (VD: ENG201, PHI101, MAT102)
   name: string;                        // Tên học phần (VD: Tiếng Anh Chuyên Ngành, Triết học Mác-Lênin)
   description: string;
-  icon: string;
+  icon?: string;
   color: string;                       // Mã màu đại diện
   semester?: string;                   // Kỳ học (VD: Học kỳ 1 - 2026)
   createdAt: string;

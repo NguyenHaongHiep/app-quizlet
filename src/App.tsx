@@ -4,7 +4,9 @@
  */
 
 import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './lib/auth-context';
 import { AppStateProvider, useAppState } from './lib/app-state';
+import { AuthScreen } from './components/AuthScreen';
 import { Navbar } from './components/Navbar';
 import { DashboardView } from './components/DashboardView';
 import { SetDetailView } from './components/SetDetailView';
@@ -16,8 +18,8 @@ import { FileImportModal } from './components/FileImportModal';
 import { CourseModal } from './components/CourseModal';
 import { SetModal } from './components/SetModal';
 import { QuestionModal } from './components/QuestionModal';
-import { Course, StudySet, Question, StudyMode } from './types';
-import { BookOpen, Layers, Upload, Plus, Home } from 'lucide-react';
+import { Course, StudySet, Question } from './types';
+import { Layers, Upload, Plus, Home } from 'lucide-react';
 
 function MainApp() {
   const {
@@ -107,9 +109,9 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-between text-slate-900 pb-20 sm:pb-8">
+    <div className="min-h-screen bg-[#FCFAF6] text-[#1F1F28] flex flex-col justify-between selection:bg-[#5B2DFF] selection:text-white pb-24 sm:pb-10">
       <div>
-        {/* Sticky Top Bar Header */}
+        {/* Sticky Top Bar Header with Supabase Auth Profile */}
         <Navbar
           onOpenImportModal={() => handleOpenImport()}
           onOpenNewCourseModal={handleOpenNewCourse}
@@ -175,39 +177,33 @@ function MainApp() {
         </main>
       </div>
 
-      {/* Footer (Clean & unboxed) */}
-      <footer className="mt-16 border-t border-slate-200/80 py-6 text-center text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">QuizStudy VN</span>
-            <span aria-hidden="true">·</span>
-            <span>Web/App học tập qua Quiz và Flashcard đa nền tảng cho sinh viên</span>
-          </div>
-          <div className="flex items-center gap-4 text-slate-500">
-            <span>Tiếng Anh Học Thuật</span>
-            <span aria-hidden="true">·</span>
-            <span>Triết học Mác - Lênin</span>
-            <span aria-hidden="true">·</span>
-            <span>Đại số Tuyến tính</span>
-            <span aria-hidden="true">·</span>
-            <span>Kinh tế Vi mô</span>
-          </div>
+      {/* Footer (Clean Warm Ivory & Lilac Flow) */}
+      <footer className="mt-16 border-t border-black/[0.04] py-8 text-center text-xs text-[#8E8E93]">
+        <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-2">
+          <span className="font-flow-serif text-sm font-medium text-[#1F1F28]">QUIZSTUDY / FLOW</span>
+          <span aria-hidden="true">&bull;</span>
+          <span>Ứng dụng học tập (made by NHH and Gehihi)</span>
         </div>
       </footer>
 
       {/* Mobile Bottom Dock for Thumb-reach Navigation (iPhone & iPad) */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-6 py-2 flex items-center justify-around text-slate-600">
+      <nav
+        style={{
+          boxShadow: '0 -10px 30px rgba(91, 45, 255, 0.04), 0 -1px 3px rgba(0, 0, 0, 0.02)',
+        }}
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-black/[0.06] px-6 py-2 flex items-center justify-around text-[#8E8E93]"
+      >
         <button
           onClick={() => {
             setActiveSetId(null);
             setActiveMode(null);
           }}
-          className={`flex flex-col items-center gap-0.5 text-[11px] ${
-            !activeSetId && !activeMode ? 'text-indigo-600 font-bold' : ''
+          className={`flex flex-col items-center gap-1 text-[11px] cursor-pointer ${
+            !activeSetId && !activeMode ? 'text-[#5B2DFF] font-semibold' : ''
           }`}
         >
-          <Home className="w-5 h-5" />
-          <span>Trang chủ</span>
+          <Home className="w-5 h-5 stroke-[2]" />
+          <span>Tổng quan</span>
         </button>
 
         <button
@@ -215,34 +211,40 @@ function MainApp() {
             setActiveSetId(null);
             setActiveMode(null);
           }}
-          className={`flex flex-col items-center gap-0.5 text-[11px] ${
-            !activeSetId && !activeMode ? 'text-indigo-600 font-bold' : ''
+          className={`flex flex-col items-center gap-1 text-[11px] cursor-pointer ${
+            activeSetId ? 'text-[#5B2DFF] font-semibold' : ''
           }`}
         >
-          <Layers className="w-5 h-5" />
+          <Layers className="w-5 h-5 stroke-[2]" />
           <span>Bộ thẻ</span>
         </button>
 
         <button
           onClick={handleOpenNewSet}
-          className="flex flex-col items-center gap-0.5 text-[11px] text-indigo-600 font-bold"
+          className="flex flex-col items-center gap-1 text-[11px] text-[#5B2DFF] font-semibold cursor-pointer"
         >
-          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center -mt-3 shadow-sm shadow-indigo-300">
-            <Plus className="w-5 h-5" />
+          <div
+            style={{
+              backgroundColor: '#5B2DFF',
+              boxShadow: '0 8px 18px rgba(91, 45, 255, 0.35)',
+            }}
+            className="w-10 h-10 rounded-full text-white flex items-center justify-center -mt-5 hover:scale-105 active:scale-95 transition-transform"
+          >
+            <Plus className="w-5 h-5 stroke-[2.4]" />
           </div>
-          <span className="mt-0.5">Tạo mới</span>
+          <span>Tạo mới</span>
         </button>
 
         <button
           onClick={() => handleOpenImport()}
-          className="flex flex-col items-center gap-0.5 text-[11px]"
+          className="flex flex-col items-center gap-1 text-[11px] hover:text-[#1F1F28] cursor-pointer"
         >
-          <Upload className="w-5 h-5" />
-          <span>Tải file</span>
+          <Upload className="w-5 h-5 stroke-[2]" />
+          <span>Nhập file</span>
         </button>
       </nav>
 
-      {/* MODALS */}
+      {/* MODALS (ALL STYLED IN LILAC FLOW) */}
       <FileImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -265,11 +267,11 @@ function MainApp() {
       <SetModal
         isOpen={isSetModalOpen}
         onClose={() => setIsSetModalOpen(false)}
-        onSave={(data) => {
+        onSave={async (data) => {
           if (editingSet) {
-            updateStudySet(editingSet.id, data);
+            await updateStudySet(editingSet.id, data);
           } else {
-            const newSet = addStudySet(data);
+            const newSet = await addStudySet(data);
             setActiveSetId(newSet.id);
             setActiveMode(null);
           }
@@ -289,10 +291,37 @@ function MainApp() {
   );
 }
 
-export default function App() {
+function AuthenticatedApp() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FCFAF6] flex flex-col items-center justify-center">
+        <div className="w-10 h-10 border-3 border-[#5B2DFF]/20 border-t-[#5B2DFF] rounded-full animate-spin mb-4" />
+        <span className="text-xs uppercase tracking-widest text-[#8E8E93] font-medium font-mono">
+          Đang kiểm tra phiên đăng nhập...
+        </span>
+      </div>
+    );
+  }
+
+  // Protected Routes: If not logged in, show clean AuthScreen (Login/Signup)
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  // If logged in, provide AppState isolated to the current user
   return (
     <AppStateProvider>
       <MainApp />
     </AppStateProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 }

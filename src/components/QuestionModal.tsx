@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, Plus, Trash2, HelpCircle, Lightbulb, Sparkles } from 'lucide-react';
+import { X, Check, Plus, Trash2, HelpCircle, Lightbulb, Sparkles, BookOpen } from 'lucide-react';
 import { Question, QuestionType, MatchingPair } from '../types';
 
 interface QuestionModalProps {
@@ -85,12 +85,40 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
     setOptions(updated);
   };
 
+  const handlePairChange = (idx: number, side: 'left' | 'right', val: string) => {
+    const updated = [...matchingPairs];
+    updated[idx][side] = val;
+    setMatchingPairs(updated);
+  };
+
+  const handleAddPair = () => {
+    setMatchingPairs([...matchingPairs, { id: `${Date.now()}`, left: '', right: '' }]);
+  };
+
+  const handleRemovePair = (idx: number) => {
+    if (matchingPairs.length <= 2) return;
+    setMatchingPairs(matchingPairs.filter((_, i) => i !== idx));
+  };
+
+  const handleOrderItemChange = (idx: number, val: string) => {
+    const updated = [...orderingItems];
+    updated[idx] = val;
+    setOrderingItems(updated);
+  };
+
+  const handleAddOrderItem = () => {
+    setOrderingItems([...orderingItems, '']);
+  };
+
+  const handleRemoveOrderItem = (idx: number) => {
+    if (orderingItems.length <= 2) return;
+    setOrderingItems(orderingItems.filter((_, i) => i !== idx));
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
     if (!prompt.trim()) {
-      setError('Vui lòng nhập nội dung câu hỏi / đề bài.');
+      setError('Vui lòng nhập nội dung câu hỏi.');
       return;
     }
 
@@ -148,23 +176,36 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-200">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-8">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1F1F28]/35 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
+      <div
+        style={{
+          boxShadow: '0 24px 60px rgba(91, 45, 255, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04)',
+        }}
+        className="bg-white rounded-3xl border border-black/[0.06] w-full max-w-2xl overflow-hidden my-8 animate-in zoom-in-95 duration-200"
+      >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">
-              {initialQuestion ? 'Chỉnh sửa câu hỏi' : 'Thêm câu hỏi mới vào bộ thẻ'}
-            </h3>
-            <p className="text-xs text-slate-500">
-              Soạn thảo câu hỏi kèm giải thích, ví dụ thực tế và mẹo nhớ
-            </p>
+        <div className="px-6 py-5 border-b border-black/[0.05] flex items-center justify-between bg-[#FCFAF6]">
+          <div className="flex items-center gap-3">
+            <div
+              style={{ boxShadow: '0 6px 16px rgba(91, 45, 255, 0.25)' }}
+              className="w-9 h-9 rounded-2xl bg-[#5B2DFF] text-white flex items-center justify-center shrink-0"
+            >
+              <Sparkles className="w-4 h-4 stroke-[2.2]" />
+            </div>
+            <div>
+              <h3 className="font-flow-serif text-lg font-normal text-[#1F1F28]">
+                {initialQuestion ? 'Chỉnh sửa câu hỏi' : 'Thêm câu hỏi mới vào bộ thẻ'}
+              </h3>
+              <p className="text-[11px] text-[#8E8E93]">
+                Soạn thảo câu hỏi kèm giải thích, ví dụ thực tế và mẹo nhớ
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+            className="w-8 h-8 rounded-full bg-white hover:bg-black/5 text-[#8E8E93] hover:text-[#1F1F28] flex items-center justify-center transition-colors cursor-pointer border border-black/[0.05]"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -172,24 +213,25 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
         <form onSubmit={handleSave}>
           <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
             {error && (
-              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl font-medium">
                 {error}
               </div>
             )}
 
-            {/* Dạng câu hỏi selector */}
+            {/* Dạng câu hỏi selector (Lilac Flow Pill Segmented Tabs) */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E8E93] mb-2">
                 Dạng câu hỏi
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-medium">
                 <button
                   type="button"
                   onClick={() => setType('multiple_choice')}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${
+                  style={type === 'multiple_choice' ? { backgroundColor: '#5B2DFF', color: '#fff', boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)' } : {}}
+                  className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
                     type === 'multiple_choice'
-                      ? 'bg-indigo-50 border-indigo-600 text-indigo-700 font-bold shadow-2xs'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'border-[#5B2DFF] font-semibold'
+                      : 'border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-[#8E8E93] hover:text-[#1F1F28]'
                   }`}
                 >
                   Trắc nghiệm 4 đáp án
@@ -197,10 +239,11 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setType('fill_blank')}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${
+                  style={type === 'fill_blank' ? { backgroundColor: '#5B2DFF', color: '#fff', boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)' } : {}}
+                  className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
                     type === 'fill_blank'
-                      ? 'bg-indigo-50 border-indigo-600 text-indigo-700 font-bold shadow-2xs'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'border-[#5B2DFF] font-semibold'
+                      : 'border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-[#8E8E93] hover:text-[#1F1F28]'
                   }`}
                 >
                   Điền từ chỗ trống
@@ -208,10 +251,11 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setType('matching')}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${
+                  style={type === 'matching' ? { backgroundColor: '#5B2DFF', color: '#fff', boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)' } : {}}
+                  className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
                     type === 'matching'
-                      ? 'bg-indigo-50 border-indigo-600 text-indigo-700 font-bold shadow-2xs'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'border-[#5B2DFF] font-semibold'
+                      : 'border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-[#8E8E93] hover:text-[#1F1F28]'
                   }`}
                 >
                   Nối khái niệm
@@ -219,10 +263,11 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setType('ordering')}
-                  className={`p-2.5 rounded-xl border text-center transition-all ${
+                  style={type === 'ordering' ? { backgroundColor: '#5B2DFF', color: '#fff', boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)' } : {}}
+                  className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
                     type === 'ordering'
-                      ? 'bg-indigo-50 border-indigo-600 text-indigo-700 font-bold shadow-2xs'
-                      : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                      ? 'border-[#5B2DFF] font-semibold'
+                      : 'border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-[#8E8E93] hover:text-[#1F1F28]'
                   }`}
                 >
                   Sắp xếp thứ tự
@@ -232,7 +277,7 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
 
             {/* Đề bài / Câu hỏi */}
             <div>
-              <label className="block text-xs font-semibold text-slate-800 mb-1">
+              <label className="block text-xs font-semibold text-[#1F1F28] mb-1.5">
                 Nội dung câu hỏi / Đề bài *
               </label>
               <textarea
@@ -240,246 +285,235 @@ export const QuestionModal: React.FC<QuestionModalProps> = ({
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="VD: Trong kinh tế học, lạm phát được định nghĩa là gì?"
-                className="w-full px-3.5 py-2.5 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-4 py-2.5 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20"
               />
             </div>
 
             {/* Cấu hình các lựa chọn tùy theo dạng câu hỏi */}
             {type === 'multiple_choice' && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-800">
-                    Các lựa chọn đáp án (Chọn radio làm đáp án đúng) *
+                  <label className="block text-xs font-semibold text-[#1F1F28]">
+                    4 Lựa chọn (Chọn nút tròn để chỉ định đáp án đúng)
                   </label>
-                  <span className="text-[11px] text-slate-400">Tối thiểu 2 lựa chọn</span>
+                  <span className="text-[11px] text-[#5B2DFF] font-medium">
+                    Đáp án đúng: Lựa chọn {String.fromCharCode(65 + correctIndex)}
+                  </span>
                 </div>
 
-                {options.map((opt, idx) => {
-                  const letters = ['A', 'B', 'C', 'D'];
-                  const isChecked = correctIndex === idx;
-                  return (
+                <div className="space-y-2">
+                  {options.map((opt, idx) => (
                     <div
                       key={idx}
-                      className={`flex items-center gap-2.5 p-2 rounded-xl border transition-colors ${
-                        isChecked
-                          ? 'border-emerald-500 bg-emerald-50/40'
-                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      className={`flex items-center gap-3 p-2.5 rounded-2xl border transition-all ${
+                        correctIndex === idx
+                          ? 'border-[#5B2DFF] bg-[#EDE8FF]/40 ring-1 ring-[#5B2DFF]'
+                          : 'border-black/[0.06] bg-[#FCFAF6]'
                       }`}
                     >
                       <button
                         type="button"
                         onClick={() => setCorrectIndex(idx)}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
-                          isChecked
-                            ? 'bg-emerald-600 text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 cursor-pointer transition-colors ${
+                          correctIndex === idx
+                            ? 'bg-[#5B2DFF] text-white shadow-xs'
+                            : 'bg-white text-[#8E8E93] border border-black/[0.08]'
                         }`}
-                        title="Đặt làm đáp án đúng"
                       >
-                        {isChecked ? <Check className="w-3.5 h-3.5" /> : letters[idx]}
+                        {String.fromCharCode(65 + idx)}
                       </button>
+
                       <input
                         type="text"
                         value={opt}
                         onChange={(e) => handleOptionChange(idx, e.target.value)}
-                        placeholder={`Lựa chọn ${letters[idx]}...`}
-                        className="w-full text-xs bg-transparent focus:outline-none text-slate-800 font-medium placeholder:text-slate-400"
+                        placeholder={`Lựa chọn ${String.fromCharCode(65 + idx)}`}
+                        className="w-full bg-transparent text-xs text-[#1F1F28] focus:outline-none"
                       />
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
             )}
 
             {type === 'fill_blank' && (
               <div>
-                <label className="block text-xs font-semibold text-slate-800 mb-1">
-                  Đáp án từ/cụm từ chính xác cần điền *
+                <label className="block text-xs font-semibold text-[#1F1F28] mb-1.5">
+                  Từ / Cụm từ đáp án chính xác *
                 </label>
                 <input
                   type="text"
                   value={fillBlankAnswer}
                   onChange={(e) => setFillBlankAnswer(e.target.value)}
-                  placeholder="VD: mitigate"
-                  className="w-full px-3.5 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Nhập từ hoặc cụm từ cần điền chuẩn xác..."
+                  className="w-full px-4 py-2.5 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Người học sẽ tự gõ từ này hoặc chọn từ các gợi ý khi làm bài kiểm tra.
-                </p>
               </div>
             )}
 
             {type === 'matching' && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-800">
-                    Các cặp khái niệm &amp; định nghĩa cần nối *
+                  <label className="block text-xs font-semibold text-[#1F1F28]">
+                    Các cặp khái niệm &amp; định nghĩa tương ứng
                   </label>
                   <button
                     type="button"
-                    onClick={() =>
-                      setMatchingPairs([
-                        ...matchingPairs,
-                        { id: String(Date.now()), left: '', right: '' }
-                      ])
-                    }
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    onClick={handleAddPair}
+                    className="text-xs text-[#5B2DFF] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Thêm cặp
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Thêm cặp</span>
                   </button>
                 </div>
 
-                {matchingPairs.map((pair, idx) => (
-                  <div key={pair.id} className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-slate-50 border border-slate-200 rounded-xl relative group">
-                    <input
-                      type="text"
-                      placeholder={`Khái niệm / Thuật ngữ ${idx + 1}`}
-                      value={pair.left}
-                      onChange={(e) => {
-                        const updated = [...matchingPairs];
-                        updated[idx].left = e.target.value;
-                        setMatchingPairs(updated);
-                      }}
-                      className="text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
-                    />
-                    <div className="flex items-center gap-1.5">
+                <div className="space-y-2">
+                  {matchingPairs.map((pair, idx) => (
+                    <div key={pair.id || idx} className="flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder={`Định nghĩa / Ý nghĩa ${idx + 1}`}
+                        value={pair.left}
+                        onChange={(e) => handlePairChange(idx, 'left', e.target.value)}
+                        placeholder="Thuật ngữ / Vế trái"
+                        className="w-1/2 px-3.5 py-2 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#5B2DFF]"
+                      />
+                      <span className="text-[#8E8E93]">&rarr;</span>
+                      <input
+                        type="text"
                         value={pair.right}
-                        onChange={(e) => {
-                          const updated = [...matchingPairs];
-                          updated[idx].right = e.target.value;
-                          setMatchingPairs(updated);
-                        }}
-                        className="w-full text-xs px-3 py-1.5 bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        onChange={(e) => handlePairChange(idx, 'right', e.target.value)}
+                        placeholder="Định nghĩa / Vế phải"
+                        className="w-1/2 px-3.5 py-2 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#5B2DFF]"
                       />
                       {matchingPairs.length > 2 && (
                         <button
                           type="button"
-                          onClick={() => setMatchingPairs(matchingPairs.filter((_, i) => i !== idx))}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
+                          onClick={() => handleRemovePair(idx)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       )}
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
             {type === 'ordering' && (
-              <div className="space-y-2.5">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-slate-800">
-                    Thứ tự đúng từ bước đầu tiên đến bước cuối cùng *
+                  <label className="block text-xs font-semibold text-[#1F1F28]">
+                    Danh sách các bước theo thứ tự chuẩn
                   </label>
                   <button
                     type="button"
-                    onClick={() => setOrderingItems([...orderingItems, ''])}
-                    className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                    onClick={handleAddOrderItem}
+                    className="text-xs text-[#5B2DFF] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" /> Thêm bước
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Thêm bước</span>
                   </button>
                 </div>
 
-                {orderingItems.map((item, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-xs font-bold flex items-center justify-center shrink-0">
-                      {idx + 1}
-                    </span>
-                    <input
-                      type="text"
-                      value={item}
-                      onChange={(e) => {
-                        const updated = [...orderingItems];
-                        updated[idx] = e.target.value;
-                        setOrderingItems(updated);
-                      }}
-                      placeholder={`Bước / Sự kiện ${idx + 1}...`}
-                      className="w-full text-xs px-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    {orderingItems.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => setOrderingItems(orderingItems.filter((_, i) => i !== idx))}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                <div className="space-y-2">
+                  {orderingItems.map((item, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-[#EDE8FF] text-[#5B2DFF] font-bold text-xs flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </span>
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleOrderItemChange(idx, e.target.value)}
+                        placeholder={`Nội dung bước thứ ${idx + 1}`}
+                        className="w-full px-3.5 py-2 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-xl focus:outline-none focus:border-[#5B2DFF]"
+                      />
+                      {orderingItems.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveOrderItem(idx)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* Phản hồi chi tiết (Feedback Loop Core) */}
-            <div className="border-t border-slate-200 pt-4 space-y-3.5">
-              <div className="flex items-center gap-2 text-xs font-bold text-indigo-900 uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Nội dung phản hồi sau khi trả lời (Feedback Card)</span>
-              </div>
+            {/* BỘ BA PHẢN HỒI (FEEDBACK FIELDS) */}
+            <div className="pt-3 border-t border-black/[0.05] space-y-3">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#8E8E93] block">
+                Phản hồi giải thích chi tiết (Hiển thị sau khi người học trả lời)
+              </span>
 
               <div>
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1">
-                  <HelpCircle className="w-3.5 h-3.5 text-indigo-500" />
-                  Lý do &amp; Giải thích chi tiết *
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1F1F28] mb-1">
+                  <HelpCircle className="w-3.5 h-3.5 text-[#5B2DFF]" />
+                  <span>Giải thích lý do đúng / sai</span>
                 </label>
                 <textarea
                   rows={2}
                   value={explanation}
                   onChange={(e) => setExplanation(e.target.value)}
-                  placeholder="Giải thích tại sao đáp án này đúng, bản chất kiến thức..."
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Giải thích vì sao đáp án này là đúng..."
+                  className="w-full px-4 py-2 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1F1F28] mb-1">
+                    <BookOpen className="w-3.5 h-3.5 text-[#8E8E93]" />
                     <span>Ví dụ minh họa thực tế</span>
                   </label>
-                  <textarea
-                    rows={2}
+                  <input
+                    type="text"
                     value={example}
                     onChange={(e) => setExample(e.target.value)}
-                    placeholder="VD: Khi thu nhập tăng, sinh viên ít ăn mì tôm hơn..."
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="VD câu văn mẫu, tình huống ứng dụng..."
+                    className="w-full px-4 py-2 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20"
                   />
                 </div>
 
                 <div>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-700 mb-1">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1F1F28] mb-1">
                     <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-                    <span>Mẹo ghi nhớ (Mnemonic)</span>
+                    <span>Mẹo ghi nhớ nhanh (Mnemonic)</span>
                   </label>
-                  <textarea
-                    rows={2}
+                  <input
+                    type="text"
                     value={memoryTip}
                     onChange={(e) => setMemoryTip(e.target.value)}
-                    placeholder="VD: Khả nghịch = Khác không (Khả - Khác)..."
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="VD: Từ ghép, liên tưởng hình ảnh..."
+                    className="w-full px-4 py-2 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20"
                   />
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2.5">
+          {/* Action buttons */}
+          <div className="px-6 py-4 border-t border-black/[0.05] flex items-center justify-end gap-3 bg-[#FCFAF6]">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-medium text-slate-600 hover:text-slate-800 transition-colors"
+              className="px-5 py-2.5 text-xs font-medium text-[#1F1F28] bg-white hover:bg-[#F3EFE6] border border-black/[0.06] rounded-full transition-all cursor-pointer"
             >
               Hủy
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-xs transition-colors"
+              style={{
+                backgroundColor: '#5B2DFF',
+                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
+              }}
+              className="px-6 py-2.5 text-xs font-semibold text-white rounded-full hover:scale-105 active:scale-95 transition-all cursor-pointer"
             >
-              {initialQuestion ? 'Lưu thay đổi' : 'Thêm vào bộ thẻ'}
+              {initialQuestion ? 'Cập nhật câu hỏi' : 'Lưu câu hỏi mới'}
             </button>
           </div>
         </form>

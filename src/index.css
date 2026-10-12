@@ -6,6 +6,60 @@
   }
 }
 
+/* Serif font for Lilac Flow */
+.font-flow-serif {
+  font-family: 'Fraunces', Georgia, serif;
+}
+
+/* Soft Neumorphic / Lilac Flow Design System Utilities */
+.bg-cream-base {
+  background-color: #FCFAF6;
+}
+
+.bg-cream-card {
+  background-color: #FFFFFF;
+}
+
+.bg-cream-subtle {
+  background-color: #F8F5EE;
+}
+
+.bg-violet-primary {
+  background-color: #5B2DFF;
+}
+
+.text-ink-deep {
+  color: #1F1F28;
+}
+
+.text-gray-soft {
+  color: #8E8E93;
+}
+
+.border-cream-edge {
+  border-color: rgba(31, 31, 40, 0.05);
+}
+
+.shadow-soft-ui {
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.03), 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.shadow-soft-depth {
+  box-shadow: 0 16px 36px rgba(31, 31, 40, 0.04), 0 2px 8px rgba(31, 31, 40, 0.02);
+}
+
+.shadow-violet-glow {
+  box-shadow: 0 8px 20px rgba(91, 45, 255, 0.35);
+}
+
+.shadow-violet-glow-hover:hover {
+  box-shadow: 0 12px 28px rgba(91, 45, 255, 0.45);
+}
+
+.shadow-soft-inset {
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.03), inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
 /* 3D Flashcard flip animation utilities */
 .perspective-1000 {
   perspective: 1000px;
