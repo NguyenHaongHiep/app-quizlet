@@ -43,7 +43,7 @@ interface AppStateContextType {
   // Tiện ích
   resetToDefaultData: () => Promise<void>;
   exportAllDataAsJson: () => void;
-  refreshFromSupabase: () => Promise<void>;
+  refreshFromSupabase: (showLoadingSpinner?: boolean) => Promise<void>;
 }
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
@@ -102,11 +102,13 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [syncError, setSyncError] = useState<string | null>(null);
 
   // Sync / fetch data from Supabase tied strictly to user_id
-  const refreshFromSupabase = useCallback(async () => {
+  const refreshFromSupabase = useCallback(async (showLoadingSpinner = true) => {
     const supabase = getSupabase();
     if (!supabase || !userId || userId === 'guest-user') return;
 
-    setIsSyncing(true);
+    if (showLoadingSpinner) {
+      setIsSyncing(true);
+    }
     setSyncError(null);
 
     try {
@@ -133,11 +135,11 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         .from('user_stats')
         .select('*')
         .eq('user_id', userId)
-        .single();
+        .maybeSingle();
 
-      // If user is brand new and has 0 courses, initialize default starter sets for them in Supabase
+      // If user is brand new in Supabase (0 courses and 0 study sets in cloud)
       if ((!dbCourses || dbCourses.length === 0) && (!dbSets || dbSets.length === 0)) {
-        // Seed default starter pack for the authenticated user
+        // Seed default starter pack for the authenticated user so their cloud account is initialized
         const initialSeedCourses = INITIAL_COURSES.map(c => ({
           id: c.id,
           user_id: userId,
@@ -160,8 +162,8 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           questions: s.questions
         }));
 
-        await supabase.from('courses').insert(initialSeedCourses);
-        await supabase.from('study_sets').insert(initialSeedSets);
+        await supabase.from('courses').upsert(initialSeedCourses);
+        await supabase.from('study_sets').upsert(initialSeedSets);
         await supabase.from('user_stats').upsert({
           user_id: userId,
           streak_days: 1,
@@ -219,30 +221,64 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     } catch (err: any) {
       console.warn('Lỗi đồng bộ hóa với Supabase:', err.message || err);
-      // Fallback to locally isolated storage
+      // Fallback to locally cached data
       setSyncError(err.message || 'Không thể đồng bộ với Supabase. Đang chạy ở chế độ cục bộ.');
     } finally {
       setIsSyncing(false);
     }
   }, [userId]);
 
-  // Trigger Supabase fetch whenever user changes
+  // Trigger Supabase fetch whenever user changes, and set up Realtime subscription for cross-device sync
   useEffect(() => {
-    if (userId) {
-      // Load user's local cache first to prevent flash
-      try {
-        const cachedCourses = localStorage.getItem(`uniflash_courses_${userId}`);
-        const cachedSets = localStorage.getItem(`uniflash_sets_${userId}`);
-        const cachedStats = localStorage.getItem(`uniflash_stats_${userId}`);
-        if (cachedCourses) setCourses(JSON.parse(cachedCourses));
-        if (cachedSets) setStudySets(JSON.parse(cachedSets));
-        if (cachedStats) setStats(JSON.parse(cachedStats));
-      } catch (e) {}
+    if (!userId) return;
 
-      if (userId !== 'guest-user') {
-        refreshFromSupabase();
-      }
-    }
+    // Load user's local cache first to ensure immediate response
+    try {
+      const cachedCourses = localStorage.getItem(`uniflash_courses_${userId}`);
+      const cachedSets = localStorage.getItem(`uniflash_sets_${userId}`);
+      const cachedStats = localStorage.getItem(`uniflash_stats_${userId}`);
+      if (cachedCourses) setCourses(JSON.parse(cachedCourses));
+      if (cachedSets) setStudySets(JSON.parse(cachedSets));
+      if (cachedStats) setStats(JSON.parse(cachedStats));
+    } catch (e) {}
+
+    if (userId === 'guest-user') return;
+
+    // Always fetch remote data immediately from Supabase to sync with other devices
+    refreshFromSupabase(true);
+
+    // Set up Realtime listener on Supabase tables for automatic cross-device live sync
+    const supabase = getSupabase();
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel(`sync-user-${userId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'courses', filter: `user_id=eq.${userId}` },
+        () => {
+          refreshFromSupabase(false);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'study_sets', filter: `user_id=eq.${userId}` },
+        () => {
+          refreshFromSupabase(false);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_stats', filter: `user_id=eq.${userId}` },
+        () => {
+          refreshFromSupabase(false);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userId, refreshFromSupabase]);
 
   // Persist to user-specific LocalStorage for instant UI feedback
@@ -277,9 +313,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCourses(prev => [newCourse, ...prev]);
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
-        await supabase.from('courses').insert({
+        const { error } = await supabase.from('courses').upsert({
           id: newId,
           user_id: userId,
           code: data.code,
@@ -289,8 +325,10 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           color: data.color || '#5B2DFF',
           semester: data.semester || ''
         });
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi khi thêm course vào Supabase:', err);
+        setSyncError(err.message || 'Không thể đồng bộ học phần mới lên Supabase.');
       }
     }
 
@@ -301,7 +339,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setCourses(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
         const payload: any = {};
         if (updates.code !== undefined) payload.code = updates.code;
@@ -311,13 +349,15 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (updates.color !== undefined) payload.color = updates.color;
         if (updates.semester !== undefined) payload.semester = updates.semester;
 
-        await supabase
+        const { error } = await supabase
           .from('courses')
           .update(payload)
           .eq('id', id)
           .eq('user_id', userId);
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi khi cập nhật course trên Supabase:', err);
+        setSyncError(err.message || 'Không thể cập nhật học phần trên Supabase.');
       }
     }
   };
@@ -328,15 +368,17 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (activeCourseId === id) setActiveCourseId(null);
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
-        await supabase
+        const { error } = await supabase
           .from('courses')
           .delete()
           .eq('id', id)
           .eq('user_id', userId);
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi khi xóa course trên Supabase:', err);
+        setSyncError(err.message || 'Không thể xóa học phần trên Supabase.');
       }
     }
   };
@@ -358,9 +400,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setStudySets(prev => [newSet, ...prev]);
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
-        await supabase.from('study_sets').insert({
+        const { error } = await supabase.from('study_sets').upsert({
           id: newId,
           user_id: userId,
           course_id: data.courseId,
@@ -370,8 +412,10 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           icon: data.icon || '',
           questions: data.questions || []
         });
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi khi thêm study set vào Supabase:', err);
+        setSyncError(err.message || 'Không thể đồng bộ bộ thẻ mới lên Supabase.');
       }
     }
 
@@ -387,7 +431,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } : s));
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
         const payload: any = { updated_at: now };
         if (updates.title !== undefined) payload.title = updates.title;
@@ -397,13 +441,15 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (updates.courseId !== undefined) payload.course_id = updates.courseId;
         if (updates.questions !== undefined) payload.questions = updates.questions;
 
-        await supabase
+        const { error } = await supabase
           .from('study_sets')
           .update(payload)
           .eq('id', id)
           .eq('user_id', userId);
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi khi cập nhật study set trên Supabase:', err);
+        setSyncError(err.message || 'Không thể cập nhật bộ thẻ trên Supabase.');
       }
     }
   };
@@ -416,15 +462,17 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
-        await supabase
+        const { error } = await supabase
           .from('study_sets')
           .delete()
           .eq('id', id)
           .eq('user_id', userId);
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi khi xóa study set trên Supabase:', err);
+        setSyncError(err.message || 'Không thể xóa bộ thẻ trên Supabase.');
       }
     }
   };
@@ -439,9 +487,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } : s));
 
     const supabase = getSupabase();
-    if (supabase && userId) {
+    if (supabase && userId && userId !== 'guest-user') {
       try {
-        await supabase
+        const { error } = await supabase
           .from('study_sets')
           .update({
             questions: nextQuestions,
@@ -449,8 +497,10 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           })
           .eq('id', setId)
           .eq('user_id', userId);
-      } catch (err) {
+        if (error) throw error;
+      } catch (err: any) {
         console.error('Lỗi cập nhật câu hỏi trên Supabase:', err);
+        setSyncError(err.message || 'Không thể đồng bộ câu hỏi lên Supabase.');
       }
     }
   };
