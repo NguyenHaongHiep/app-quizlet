@@ -34,6 +34,13 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   const [isFlipped, setIsFlipped] = useState(false);
   const [filterStarredOnly, setFilterStarredOnly] = useState(false);
 
+  // Đồng bộ danh sách câu hỏi khi bộ thẻ hoặc danh sách câu hỏi thay đổi
+  useEffect(() => {
+    setQuestions([...studySet.questions]);
+    setCurrentIndex(0);
+    setIsFlipped(false);
+  }, [studySet.id, studySet.questions]);
+
   // Lọc theo câu hỏi đánh dấu sao nếu người dùng bật
   const activeQuestions = filterStarredOnly
     ? questions.filter(q => q.starred)

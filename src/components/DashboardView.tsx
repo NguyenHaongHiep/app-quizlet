@@ -303,13 +303,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
               Hãy thử tìm kiếm với từ khóa khác hoặc tải lên file câu hỏi Excel/CSV để tạo bộ thẻ mới.
             </p>
-            <button
-              onClick={onOpenImportModal}
-              className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-xl"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Nhập file Excel ngay</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+              {selectedCourseFilter !== 'all' && (
+                <button
+                  onClick={() => setSelectedCourseFilter('all')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl"
+                >
+                  Bỏ lọc theo môn (Xem tất cả)
+                </button>
+              )}
+              <button
+                onClick={onOpenImportModal}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-xl"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Nhập file Excel ngay</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">

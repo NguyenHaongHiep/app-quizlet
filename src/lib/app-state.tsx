@@ -122,18 +122,34 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       id: `course-${Date.now()}`,
       createdAt: new Date().toISOString()
     };
-    setCourses(prev => [newCourse, ...prev]);
+    setCourses(prev => {
+      const updated = [newCourse, ...prev];
+      try { localStorage.setItem(STORAGE_KEY_COURSES, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
     return newCourse;
   };
 
   const updateCourse = (id: string, updates: Partial<Course>) => {
-    setCourses(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    setCourses(prev => {
+      const updated = prev.map(c => c.id === id ? { ...c, ...updates } : c);
+      try { localStorage.setItem(STORAGE_KEY_COURSES, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
   };
 
   const deleteCourse = (id: string) => {
-    setCourses(prev => prev.filter(c => c.id !== id));
+    setCourses(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      try { localStorage.setItem(STORAGE_KEY_COURSES, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
     // Xóa các bộ thẻ thuộc học phần này
-    setStudySets(prev => prev.filter(s => s.courseId !== id));
+    setStudySets(prev => {
+      const updated = prev.filter(s => s.courseId !== id);
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
     if (activeCourseId === id) setActiveCourseId(null);
   };
 
@@ -142,24 +158,36 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const now = new Date().toISOString();
     const newSet: StudySet = {
       ...data,
-      id: `set-${Date.now()}`,
+      id: `set-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: now,
       updatedAt: now
     };
-    setStudySets(prev => [newSet, ...prev]);
+    setStudySets(prev => {
+      const updated = [newSet, ...prev];
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
     return newSet;
   };
 
   const updateStudySet = (id: string, updates: Partial<StudySet>) => {
-    setStudySets(prev => prev.map(s => s.id === id ? {
-      ...s,
-      ...updates,
-      updatedAt: new Date().toISOString()
-    } : s));
+    setStudySets(prev => {
+      const updated = prev.map(s => s.id === id ? {
+        ...s,
+        ...updates,
+        updatedAt: new Date().toISOString()
+      } : s);
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
   };
 
   const deleteStudySet = (id: string) => {
-    setStudySets(prev => prev.filter(s => s.id !== id));
+    setStudySets(prev => {
+      const updated = prev.filter(s => s.id !== id);
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
     if (activeSetId === id) {
       setActiveSetId(null);
       setActiveMode(null);
@@ -172,47 +200,63 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ...questionData,
       id: `q-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
     };
-    setStudySets(prev => prev.map(s => {
-      if (s.id !== setId) return s;
-      return {
-        ...s,
-        updatedAt: new Date().toISOString(),
-        questions: [...s.questions, newQ]
-      };
-    }));
+    setStudySets(prev => {
+      const updated = prev.map(s => {
+        if (s.id !== setId) return s;
+        return {
+          ...s,
+          updatedAt: new Date().toISOString(),
+          questions: [...s.questions, newQ]
+        };
+      });
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
   };
 
   const updateQuestionInSet = (setId: string, questionId: string, updates: Partial<Question>) => {
-    setStudySets(prev => prev.map(s => {
-      if (s.id !== setId) return s;
-      return {
-        ...s,
-        updatedAt: new Date().toISOString(),
-        questions: s.questions.map(q => q.id === questionId ? { ...q, ...updates } : q)
-      };
-    }));
+    setStudySets(prev => {
+      const updated = prev.map(s => {
+        if (s.id !== setId) return s;
+        return {
+          ...s,
+          updatedAt: new Date().toISOString(),
+          questions: s.questions.map(q => q.id === questionId ? { ...q, ...updates } : q)
+        };
+      });
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
   };
 
   const deleteQuestionFromSet = (setId: string, questionId: string) => {
-    setStudySets(prev => prev.map(s => {
-      if (s.id !== setId) return s;
-      return {
-        ...s,
-        updatedAt: new Date().toISOString(),
-        questions: s.questions.filter(q => q.id !== questionId)
-      };
-    }));
+    setStudySets(prev => {
+      const updated = prev.map(s => {
+        if (s.id !== setId) return s;
+        return {
+          ...s,
+          updatedAt: new Date().toISOString(),
+          questions: s.questions.filter(q => q.id !== questionId)
+        };
+      });
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
   };
 
   const addBulkQuestionsToSet = (setId: string, newQuestions: Question[]) => {
-    setStudySets(prev => prev.map(s => {
-      if (s.id !== setId) return s;
-      return {
-        ...s,
-        updatedAt: new Date().toISOString(),
-        questions: [...s.questions, ...newQuestions]
-      };
-    }));
+    setStudySets(prev => {
+      const updated = prev.map(s => {
+        if (s.id !== setId) return s;
+        return {
+          ...s,
+          updatedAt: new Date().toISOString(),
+          questions: [...s.questions, ...newQuestions]
+        };
+      });
+      try { localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(updated)); } catch (e) {}
+      return updated;
+    });
   };
 
   const toggleStarQuestion = (setId: string, questionId: string) => {

@@ -258,8 +258,32 @@ export const SetDetailView: React.FC<SetDetailViewProps> = ({
         {/* Questions List */}
         <div className="space-y-3">
           {filteredQuestions.length === 0 ? (
-            <div className="p-8 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-xs">
-              {search ? 'Không tìm thấy câu hỏi phù hợp với từ khóa.' : 'Bộ thẻ này chưa có câu hỏi nào. Nhấn "Thêm câu hỏi" để bắt đầu!'}
+            <div className="p-10 text-center bg-white rounded-2xl border border-slate-200 text-slate-500 text-xs space-y-3">
+              <Layers className="w-8 h-8 text-slate-300 mx-auto" />
+              <div className="font-semibold text-slate-700 text-sm">
+                {search ? 'Không tìm thấy câu hỏi phù hợp với từ khóa.' : 'Bộ thẻ này hiện chưa có câu hỏi nào.'}
+              </div>
+              <p className="max-w-md mx-auto text-slate-400">
+                Hãy thêm câu hỏi thủ công hoặc tải lên file Excel/CSV/JSON có sẵn để bắt đầu học ngay.
+              </p>
+              {!search && (
+                <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+                  <button
+                    onClick={onOpenAddQuestion}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Thêm câu hỏi đầu tiên</span>
+                  </button>
+                  <button
+                    onClick={onOpenImportModal}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-xl border border-indigo-200 transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Tải file Excel / CSV vào bộ này</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             filteredQuestions.map((q, idx) => {

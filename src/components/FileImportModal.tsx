@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   UploadCloud,
@@ -33,7 +33,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
   onClose,
   targetSetId
 }) => {
-  const { studySets, courses, addBulkQuestionsToSet, addStudySet, setActiveSetId } = useAppState();
+  const { studySets, courses, addBulkQuestionsToSet, addStudySet, setActiveSetId, setActiveMode } = useAppState();
 
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -41,13 +41,31 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Chọn bộ thẻ đích hoặc tạo mới
-  const [destinationMode, setDestinationMode] = useState<'existing' | 'new'>(targetSetId ? 'existing' : 'new');
-  const [selectedSetId, setSelectedSetId] = useState<string>(targetSetId || (studySets[0]?.id || ''));
+  const [destinationMode, setDestinationMode] = useState<'existing' | 'new'>('new');
+  const [selectedSetId, setSelectedSetId] = useState<string>('');
   const [newSetTitle, setNewSetTitle] = useState('');
-  const [newSetCourseId, setNewSetCourseId] = useState<string>(courses[0]?.id || '');
+  const [newSetCourseId, setNewSetCourseId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'upload' | 'guide'>('upload');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Đảm bảo reset trạng thái chuẩn xác mỗi khi modal được mở ra
+  useEffect(() => {
+    if (isOpen) {
+      if (targetSetId) {
+        setDestinationMode('existing');
+        setSelectedSetId(targetSetId);
+      } else {
+        setDestinationMode('new');
+        setSelectedSetId(studySets[0]?.id || '');
+      }
+      setParseResult(null);
+      setErrorMessage(null);
+      setNewSetTitle('');
+      setNewSetCourseId(courses[0]?.id || '');
+      setActiveTab('upload');
+    }
+  }, [isOpen, targetSetId, courses, studySets]);
 
   if (!isOpen) return null;
 
@@ -101,6 +119,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
         questions: parseResult.questions
       });
       setActiveSetId(newSet.id);
+      setActiveMode(null);
     } else {
       if (!selectedSetId) {
         setErrorMessage('Vui lòng chọn bộ thẻ cần thêm câu hỏi.');
@@ -108,6 +127,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
       }
       addBulkQuestionsToSet(selectedSetId, parseResult.questions);
       setActiveSetId(selectedSetId);
+      setActiveMode(null);
     }
 
     onClose();

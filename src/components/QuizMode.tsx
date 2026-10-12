@@ -38,6 +38,15 @@ export const QuizMode: React.FC<QuizModeProps> = ({
   const [questions, setQuestions] = useState<Question[]>(() => [...studySet.questions]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // Đồng bộ danh sách câu hỏi khi bộ thẻ thay đổi
+  useEffect(() => {
+    setQuestions([...studySet.questions]);
+    setCurrentIndex(0);
+    setIsAnswered(false);
+    setAnswerHistory([]);
+    setIsCompleted(false);
+  }, [studySet.id, studySet.questions]);
+
   // Trạng thái câu hiện tại
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [fillInput, setFillInput] = useState('');

@@ -120,6 +120,7 @@ function MainApp() {
         <main>
           {activeMode === 'flashcard' && currentSet ? (
             <FlashcardMode
+              key={`fc-${currentSet.id}`}
               studySet={currentSet}
               onBack={() => setActiveMode(null)}
               onToggleStar={(qId) => toggleStarQuestion(currentSet.id, qId)}
@@ -127,22 +128,26 @@ function MainApp() {
             />
           ) : activeMode === 'quiz' && currentSet ? (
             <QuizMode
+              key={`qz-${currentSet.id}`}
               studySet={currentSet}
               onBack={() => setActiveMode(null)}
               onRecordResult={recordQuizResult}
             />
           ) : activeMode === 'match' && currentSet ? (
             <MatchMode
+              key={`mc-${currentSet.id}`}
               studySet={currentSet}
               onBack={() => setActiveMode(null)}
             />
           ) : activeMode === 'write' && currentSet ? (
             <WriteMode
+              key={`wr-${currentSet.id}`}
               studySet={currentSet}
               onBack={() => setActiveMode(null)}
             />
           ) : currentSet ? (
             <SetDetailView
+              key={`view-${currentSet.id}`}
               studySet={currentSet}
               course={currentCourse}
               onBack={() => {
@@ -207,13 +212,11 @@ function MainApp() {
 
         <button
           onClick={() => {
-            if (studySets[0]) {
-              setActiveSetId(studySets[0].id);
-              setActiveMode(null);
-            }
+            setActiveSetId(null);
+            setActiveMode(null);
           }}
           className={`flex flex-col items-center gap-0.5 text-[11px] ${
-            activeSetId && !activeMode ? 'text-indigo-600 font-bold' : ''
+            !activeSetId && !activeMode ? 'text-indigo-600 font-bold' : ''
           }`}
         >
           <Layers className="w-5 h-5" />
@@ -268,6 +271,7 @@ function MainApp() {
           } else {
             const newSet = addStudySet(data);
             setActiveSetId(newSet.id);
+            setActiveMode(null);
           }
         }}
         courses={courses}
