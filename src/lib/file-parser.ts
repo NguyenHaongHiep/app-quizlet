@@ -202,8 +202,8 @@ function extractQuestionsFromRecords(records: Record<string, any>[], fileName: s
       return '';
     };
 
-    // Tìm câu hỏi / khái niệm
-    const prompt = getVal(['cau hoi', 'khai niem', 'term', 'question', 'noi dung', 'de bai', 'tu vung']);
+    // Tìm câu hỏi / khái niệm / thuật ngữ
+    const prompt = getVal(['thuat ngu', 'cau hoi', 'khai niem', 'term', 'question', 'noi dung', 'de bai', 'tu vung']);
     if (!prompt) {
       errors.push(`Dòng ${index + 2}: Bỏ qua vì không tìm thấy cột Câu hỏi / Thuật ngữ.`);
       return;

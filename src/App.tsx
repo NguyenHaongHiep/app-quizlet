@@ -174,9 +174,9 @@ function MainApp() {
       <footer className="mt-16 border-t border-slate-200/80 py-6 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-700">UniFlash &amp; Quiz</span>
+            <span className="font-semibold text-slate-700">QuizStudy VN</span>
             <span aria-hidden="true">·</span>
-            <span>Nền tảng ôn thi đại học thông minh</span>
+            <span>Web/App học tập qua Quiz và Flashcard đa nền tảng cho sinh viên</span>
           </div>
           <div className="flex items-center gap-4 text-slate-500">
             <span>Tiếng Anh Học Thuật</span>

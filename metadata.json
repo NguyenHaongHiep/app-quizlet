@@ -1,6 +1,8 @@
 {
   "name": "UniFlash & Quiz - Nền tảng học tập thông minh",
-  "description": "Ứng dụng trắc nghiệm và flashcard đa nền tảng dành cho sinh viên đại học. Hỗ trợ import Excel, CSV, JSON, phản hồi giải thích chi tiết tức thì.",
+  "description": "Ứng dụng trắc nghiệm và flashcard đa nền tảng dành cho sinh viên đại học. Hỗ trợ import Excel, CSV, JSON, phản hồi giải thích chi tiết tức thì (made by NHH)",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

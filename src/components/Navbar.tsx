@@ -43,10 +43,10 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
             <div className="flex flex-col">
               <span className="text-base font-bold tracking-tight text-slate-900 group-hover:text-indigo-600 transition-colors whitespace-nowrap">
-                UniFlash &amp; Quiz
+                QuizStudy VN
               </span>
               <span className="text-[11px] font-medium text-slate-400 whitespace-nowrap">
-                Đại học &amp; Học thuật
+                Học tập &amp; Flashcard Đại học
               </span>
             </div>
           </button>
