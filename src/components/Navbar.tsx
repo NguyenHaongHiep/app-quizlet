@@ -26,7 +26,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     isSyncing
   } = useAppState();
 
-  const { user, signOut } = useAuth();
+  const { user, signOut, isGuest } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const handleGoHome = () => {
@@ -40,8 +40,8 @@ export const Navbar: React.FC<NavbarProps> = ({
     await signOut();
   };
 
-  const userEmailDisplay = user?.email || 'Người dùng';
-  const userInitial = userEmailDisplay.charAt(0).toUpperCase();
+  const userEmailDisplay = isGuest ? 'Khách trải nghiệm' : user?.email || 'Người dùng';
+  const userInitial = isGuest ? 'K' : userEmailDisplay.charAt(0).toUpperCase();
 
   return (
     <header className="sticky top-0 z-40 bg-[#FCFAF6]/95 backdrop-blur-md border-b border-black/[0.05] transition-all">
@@ -178,9 +178,16 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-black/[0.08] p-3 shadow-xl z-50 animate-in fade-in slide-in-from-top-1"
               >
                 <div className="px-3 py-2 border-b border-black/[0.05] mb-2">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-[#1F1F28]">
-                    <UserIcon className="w-3.5 h-3.5 text-[#5B2DFF]" />
-                    <span>Tài khoản Supabase</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-[#1F1F28]">
+                      <UserIcon className="w-3.5 h-3.5 text-[#5B2DFF]" />
+                      <span>{isGuest ? 'Chế độ Khách' : 'Tài khoản Supabase'}</span>
+                    </div>
+                    {isGuest && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-[#5B2DFF] font-medium">
+                        Offline
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-[#8E8E93] truncate mt-1" title={userEmailDisplay}>
                     {userEmailDisplay}
@@ -193,7 +200,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setShowUserMenu(false);
                       onOpenImportModal();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#1F1F28] hover:bg-black/[0.03] rounded-xl transition-colors text-left"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-[#1F1F28] hover:bg-black/[0.03] rounded-xl transition-colors text-left cursor-pointer"
                   >
                     <Upload className="w-3.5 h-3.5 text-[#8E8E93]" />
                     <span>Nhập câu hỏi từ file</span>
@@ -204,7 +211,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-600 hover:bg-rose-50 rounded-xl transition-colors text-left font-medium cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Đăng xuất (Sign Out)</span>
+                    <span>{isGuest ? 'Đăng nhập / Thoát chế độ Khách' : 'Đăng xuất (Sign Out)'}</span>
                   </button>
                 </div>
               </div>

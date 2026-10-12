@@ -7,12 +7,26 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   isConfigured: boolean;
+  isGuest: boolean;
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>;
   signUp: (email: string, password: string) => Promise<{ error: AuthError | null; data?: { user: User | null } }>;
   signOut: () => Promise<void>;
+  continueAsGuest: () => void;
   updateConfig: (url: string, key: string) => void;
   config: { url: string; key: string };
 }
+
+const GUEST_STORAGE_KEY = 'lilac_flow_is_guest';
+
+const createGuestUser = (): User => ({
+  id: 'guest-user',
+  app_metadata: {},
+  user_metadata: { full_name: 'Khách trải nghiệm' },
+  aud: 'authenticated',
+  created_at: new Date().toISOString(),
+  email: 'guest@lilacflow.app',
+  role: 'authenticated'
+} as unknown as User);
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -21,10 +35,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState(getStoredSupabaseConfig);
+  const [isGuest, setIsGuest] = useState(false);
 
   const isConfigured = Boolean(config.url && config.key);
 
   useEffect(() => {
+    // Check if user previously chose Guest mode
+    const storedGuest = localStorage.getItem(GUEST_STORAGE_KEY) === 'true';
+    if (storedGuest) {
+      setIsGuest(true);
+      setUser(createGuestUser());
+      setLoading(false);
+      return;
+    }
+
     const supabase = getSupabase();
 
     if (!supabase) {
@@ -95,10 +119,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { error, data: { user: data.user } };
   };
 
+  const continueAsGuest = () => {
+    localStorage.setItem(GUEST_STORAGE_KEY, 'true');
+    setIsGuest(true);
+    setUser(createGuestUser());
+  };
+
   const signOut = async () => {
+    localStorage.removeItem(GUEST_STORAGE_KEY);
+    setIsGuest(false);
     const supabase = getSupabase();
     if (supabase) {
-      await supabase.auth.signOut();
+      try {
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.error('Error signing out:', e);
+      }
     }
     setUser(null);
     setSession(null);
@@ -116,9 +152,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         session,
         loading,
         isConfigured,
+        isGuest,
         signIn,
         signUp,
         signOut,
+        continueAsGuest,
         updateConfig,
         config
       }}

@@ -104,7 +104,7 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Sync / fetch data from Supabase tied strictly to user_id
   const refreshFromSupabase = useCallback(async () => {
     const supabase = getSupabase();
-    if (!supabase || !userId) return;
+    if (!supabase || !userId || userId === 'guest-user') return;
 
     setIsSyncing(true);
     setSyncError(null);
@@ -239,7 +239,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (cachedStats) setStats(JSON.parse(cachedStats));
       } catch (e) {}
 
-      refreshFromSupabase();
+      if (userId !== 'guest-user') {
+        refreshFromSupabase();
+      }
     }
   }, [userId, refreshFromSupabase]);
 

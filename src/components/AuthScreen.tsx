@@ -4,7 +4,7 @@ import { SUPABASE_SQL_SCHEMA } from '../lib/supabase';
 import { BookOpen, LogIn, UserPlus, KeyRound, Mail, Sparkles, AlertCircle, CheckCircle, Database, Copy, Check } from 'lucide-react';
 
 export const AuthScreen: React.FC = () => {
-  const { isConfigured, signIn, signUp, updateConfig, config } = useAuth();
+  const { isConfigured, signIn, signUp, updateConfig, config, continueAsGuest } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -12,8 +12,8 @@ export const AuthScreen: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Supabase Project Config Modal / Form
-  const [showConfig, setShowConfig] = useState(!isConfigured);
+  // Supabase Project Config Modal / Form (Mặc định ẩn để giao diện luôn gọn gàng)
+  const [showConfig, setShowConfig] = useState(false);
   const [inputUrl, setInputUrl] = useState(config.url);
   const [inputKey, setInputKey] = useState(config.key);
   const [showSql, setShowSql] = useState(false);
@@ -23,6 +23,13 @@ export const AuthScreen: React.FC = () => {
     e.preventDefault();
     setErrorMessage(null);
     setSuccessMessage(null);
+
+    if (!isConfigured) {
+      setErrorMessage(
+        'Dự án chưa được kết nối với Supabase API Keys. Bạn có thể bấm "Trải nghiệm ngay (Chế độ Khách)" ở trên để vào học ngay, hoặc bấm "Cấu hình Supabase" ở góc trên để nhập URL & Key.'
+      );
+      return;
+    }
 
     if (!email.trim() || !password.trim()) {
       setErrorMessage('Vui lòng nhập đầy đủ Email và Mật khẩu.');
@@ -113,31 +120,47 @@ export const AuthScreen: React.FC = () => {
       {/* Main Container */}
       <main className="flex-1 flex items-center justify-center p-4 sm:p-6 my-6">
         <div className="w-full max-w-md">
-          {/* Supabase Connect Prompt if not configured */}
-          {!isConfigured && !showConfig && (
-            <div
-              style={{
-                boxShadow: '0 10px 30px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02)'
-              }}
-              className="mb-6 p-5 rounded-3xl bg-amber-50/70 border border-amber-200/80 text-amber-900 text-sm flex flex-col gap-3"
-            >
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-medium">Chưa có kết nối Supabase</p>
-                  <p className="text-xs text-amber-800/80 leading-relaxed">
-                    Để kích hoạt đăng nhập và lưu trữ bộ thẻ riêng cho từng tài khoản, vui lòng kết nối Supabase Project URL và Anon Key của bạn.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowConfig(true)}
-                className="self-end px-4 py-1.5 rounded-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium transition-all"
+          {/* Quick Start / Guest Mode Callout */}
+          <div
+            style={{
+              boxShadow: '0 10px 30px rgba(91, 45, 255, 0.08), 0 2px 6px rgba(0,0,0,0.02)'
+            }}
+            className="mb-6 p-5 rounded-3xl bg-gradient-to-br from-white via-purple-50/40 to-white border border-[#C8B4FF]/40 flex flex-col gap-3.5 transition-all"
+          >
+            <div className="flex items-start gap-3.5">
+              <div
+                style={{
+                  boxShadow: '0 6px 16px rgba(91, 45, 255, 0.25)'
+                }}
+                className="w-10 h-10 rounded-2xl bg-[#5B2DFF] text-white flex items-center justify-center shrink-0 mt-0.5"
               >
-                Nhập Supabase Keys
-              </button>
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-flow-serif font-medium text-sm text-[#1F1F28]">
+                    Dùng thử nhanh không cần đăng ký
+                  </h3>
+                  <span className="text-[10px] uppercase font-semibold px-2 py-0.5 rounded-full bg-[#5B2DFF]/10 text-[#5B2DFF]">
+                    Offline
+                  </span>
+                </div>
+                <p className="text-xs text-[#8E8E93] leading-relaxed">
+                  Vào học ngay với bộ dữ liệu mẫu, tạo flashcard và làm bài trắc nghiệm mà không cần tài khoản hay cấu hình.
+                </p>
+              </div>
             </div>
-          )}
+            <button
+              onClick={continueAsGuest}
+              style={{
+                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.25)'
+              }}
+              className="w-full py-2.5 px-4 rounded-full bg-[#5B2DFF] hover:bg-[#4820d9] text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all transform active:scale-98 cursor-pointer"
+            >
+              <span>Vào học ngay với tư cách Khách</span>
+              <span>&rarr;</span>
+            </button>
+          </div>
 
           {/* Config Box Drawer / Toggle */}
           {showConfig && (
@@ -145,7 +168,7 @@ export const AuthScreen: React.FC = () => {
               style={{
                 boxShadow: '0 10px 30px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02)'
               }}
-              className="mb-6 p-6 rounded-3xl bg-white border border-black/[0.06] transition-all"
+              className="mb-6 p-6 rounded-3xl bg-white border border-black/[0.06] transition-all animate-in fade-in"
             >
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -154,18 +177,16 @@ export const AuthScreen: React.FC = () => {
                     Cấu hình Dự án Supabase
                   </h3>
                 </div>
-                {isConfigured && (
-                  <button
-                    onClick={() => setShowConfig(false)}
-                    className="text-xs text-[#8E8E93] hover:text-[#1F1F28]"
-                  >
-                    Đóng
-                  </button>
-                )}
+                <button
+                  onClick={() => setShowConfig(false)}
+                  className="text-xs text-[#8E8E93] hover:text-[#1F1F28] px-2 py-1 rounded-full hover:bg-black/5"
+                >
+                  Đóng
+                </button>
               </div>
 
               <p className="text-xs text-[#8E8E93] mb-4 leading-relaxed">
-                Nhập thông tin kết nối từ trang Supabase Dashboard (Settings → API) để đồng bộ dữ liệu người dùng cô lập.
+                Dành cho người muốn đồng bộ đám mây: Nhập thông tin kết nối từ Supabase Dashboard (Settings → API) để đồng bộ dữ liệu người dùng.
               </p>
 
               <form onSubmit={handleSaveConfig} className="space-y-3.5">
@@ -208,7 +229,7 @@ export const AuthScreen: React.FC = () => {
 
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-full bg-[#5B2DFF] text-white text-xs font-medium hover:bg-[#4820d9] transition-all"
+                    className="px-5 py-2 rounded-full bg-[#5B2DFF] text-white text-xs font-medium hover:bg-[#4820d9] transition-all cursor-pointer"
                   >
                     Lưu cấu hình
                   </button>
@@ -221,7 +242,7 @@ export const AuthScreen: React.FC = () => {
                     <span className="text-[11px] font-semibold text-[#1F1F28]">SQL Editor (Chạy trên Supabase):</span>
                     <button
                       onClick={handleCopySql}
-                      className="text-xs text-[#5B2DFF] flex items-center gap-1 hover:underline"
+                      className="text-xs text-[#5B2DFF] flex items-center gap-1 hover:underline cursor-pointer"
                     >
                       {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                       <span>{copiedSql ? 'Đã sao chép' : 'Sao chép SQL'}</span>
@@ -381,6 +402,18 @@ export const AuthScreen: React.FC = () => {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* Discreet Config Trigger */}
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowConfig(!showConfig)}
+              className="inline-flex items-center gap-1.5 text-xs text-[#8E8E93] hover:text-[#5B2DFF] transition-colors cursor-pointer py-1 px-3 rounded-full hover:bg-black/[0.03]"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>{showConfig ? 'Ẩn cấu hình Supabase' : 'Tùy chọn: Kết nối Supabase Cloud Database'}</span>
+            </button>
           </div>
         </div>
       </main>
