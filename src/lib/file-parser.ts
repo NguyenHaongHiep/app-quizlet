@@ -125,143 +125,452 @@ export function parsePastedText(rawText: string, sourceName = 'Văn bản dán n
     return { questions: [], errors: ['Văn bản trống, vui lòng nhập nội dung.'], totalRows: 0, fileName: sourceName };
   }
 
-  const lines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const questions: Question[] = [];
-  const errors: string[] = [];
+  // 1. Chuẩn hóa khoảng trắng đặc biệt và gạch ngang Unicode (en-dash, em-dash)
+  const normalizedText = cleaned
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u2013\u2014]/g, ' - ');
 
-  // Kiểm tra xem văn bản có phải dạng câu hỏi trắc nghiệm theo khối không (chứa A. B. hoặc Q: / Question:)
-  const hasQuizBlocks = lines.some(l => /^(câu\s*\d+|q\d*|question\d*):/i.test(l) || /^[A-D][\.\)]\s+/i.test(l));
-  const hasQnABlocks = lines.some(l => /^[Qq]:\s*/i.test(l)) && lines.some(l => /^[Aa]:\s*/i.test(l));
-
-  if (hasQuizBlocks) {
-    // Parser Dạng 1: Khối câu hỏi trắc nghiệm A, B, C, D
-    let currentPrompt = '';
-    let currentOptions: string[] = [];
-    let currentAns = '';
-    let currentExp = '';
-    let currentTip = '';
-
-    const pushCurrentBlock = () => {
-      if (currentPrompt && (currentAns || currentOptions.length > 0)) {
-        questions.push(buildParsedQuestion(currentPrompt, currentOptions, currentAns, currentExp, currentTip, questions.length));
+  // TIER 1: Kiểm tra định dạng JSON
+  if ((normalizedText.startsWith('[') && normalizedText.endsWith(']')) ||
+      (normalizedText.startsWith('{') && normalizedText.endsWith('}'))) {
+    try {
+      const parsed = JSON.parse(normalizedText);
+      const arrayData = Array.isArray(parsed) ? parsed : (parsed.questions || parsed.cards || parsed.items || parsed.data);
+      if (Array.isArray(arrayData) && arrayData.length > 0) {
+        const res = extractQuestionsFromRecords(arrayData, sourceName);
+        if (res.questions.length > 0) {
+          normalizeMultipleChoiceOptions(res.questions);
+          return res;
+        }
       }
-      currentPrompt = '';
-      currentOptions = [];
-      currentAns = '';
-      currentExp = '';
-      currentTip = '';
-    };
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Bắt đầu một câu hỏi mới
-      if (/^(câu\s*\d+|q\d*|question\d*):/i.test(line)) {
-        pushCurrentBlock();
-        currentPrompt = line.replace(/^(câu\s*\d+|q\d*|question\d*):\s*/i, '');
-      } else if (/^[A-D][\.\)]\s+/i.test(line)) {
-        currentOptions.push(line.replace(/^[A-D][\.\)]\s+/i, ''));
-      } else if (/^(đáp án|answer|ans|đáp án đúng):\s*/i.test(line)) {
-        currentAns = line.replace(/^(đáp án|answer|ans|đáp án đúng):\s*/i, '');
-      } else if (/^(giải thích|explanation|exp|lý do):\s*/i.test(line)) {
-        currentExp = line.replace(/^(giải thích|explanation|exp|lý do):\s*/i, '');
-      } else if (/^(mẹo nhớ|tip|mnemonic|mẹo):\s*/i.test(line)) {
-        currentTip = line.replace(/^(mẹo nhớ|tip|mnemonic|mẹo):\s*/i, '');
-      } else if (!currentPrompt) {
-        currentPrompt = line;
-      } else if (currentOptions.length === 0 && !currentAns) {
-        // Nối thêm vào đề bài nếu chưa xuất hiện lựa chọn
-        currentPrompt += ' ' + line;
-      }
+    } catch {
+      // Tiếp tục các parser văn bản tiếp theo
     }
-    pushCurrentBlock();
-  } else if (hasQnABlocks) {
-    // Parser Dạng 2: Khối Q&A (Q: ... A: ... Exp: ... Tip: ...)
-    let currentPrompt = '';
-    let currentAns = '';
-    let currentExp = '';
-    let currentTip = '';
-
-    const pushQnA = () => {
-      if (currentPrompt && currentAns) {
-        questions.push(buildParsedQuestion(currentPrompt, [currentAns], currentAns, currentExp, currentTip, questions.length));
-      }
-      currentPrompt = '';
-      currentAns = '';
-      currentExp = '';
-      currentTip = '';
-    };
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (/^[Qq]:\s*/i.test(line)) {
-        pushQnA();
-        currentPrompt = line.replace(/^[Qq]:\s*/i, '');
-      } else if (/^[Aa]:\s*/i.test(line)) {
-        currentAns = line.replace(/^[Aa]:\s*/i, '');
-      } else if (/^(giải thích|exp|explanation):\s*/i.test(line)) {
-        currentExp = line.replace(/^(giải thích|exp|explanation):\s*/i, '');
-      } else if (/^(mẹo|tip|mnemonic):\s*/i.test(line)) {
-        currentTip = line.replace(/^(mẹo|tip|mnemonic):\s*/i, '');
-      }
-    }
-    pushQnA();
-  } else {
-    // Parser Dạng 3: Mỗi dòng là một thẻ (Phân cách bởi Tab, Dấu gạch ngang, Dấu hai chấm, hoặc Dấu mũi tên)
-    // Ví dụ:
-    // Tenant - Người thuê nhà - Thường ký hợp đồng với chủ trọ - Mẹo: Ten = 10 người thuê
-    // Ubiquitous : Có mặt ở khắp nơi : Smartphones are ubiquitous
-    lines.forEach((line, index) => {
-      // Xác định delimiter phù hợp nhất trên dòng này
-      let parts: string[] = [];
-
-      if (line.includes('\t')) {
-        parts = line.split('\t').map(p => p.trim());
-      } else if (line.includes(' - ')) {
-        parts = line.split(' - ').map(p => p.trim());
-      } else if (line.includes(' : ')) {
-        parts = line.split(' : ').map(p => p.trim());
-      } else if (line.includes(' => ')) {
-        parts = line.split(' => ').map(p => p.trim());
-      } else if (line.includes(' | ')) {
-        parts = line.split(' | ').map(p => p.trim());
-      } else if (line.includes(' // ')) {
-        parts = line.split(' // ').map(p => p.trim());
-      } else if (line.includes('-') && !line.startsWith('-')) {
-        parts = line.split('-').map(p => p.trim());
-      } else if (line.includes(':') && !line.startsWith(':')) {
-        parts = line.split(':').map(p => p.trim());
-      }
-
-      if (parts.length >= 2 && parts[0] && parts[1]) {
-        const prompt = parts[0];
-        const answer = parts[1];
-        const explanation = parts[2] || `Định nghĩa: ${answer}`;
-        const memoryTip = parts[3] || '';
-
-        questions.push({
-          id: `q-paste-${Date.now()}-${index}`,
-          type: 'multiple_choice',
-          prompt,
-          correctAnswer: answer,
-          options: [answer],
-          explanation,
-          example: '',
-          memoryTip
-        });
-      } else {
-        errors.push(`Dòng ${index + 1}: Không tìm thấy dấu phân cách (-, :, hoặc tab) giữa câu hỏi và đáp án.`);
-      }
-    });
   }
 
-  // Chuẩn hóa 4 lựa chọn trắc nghiệm mượt mà
-  normalizeMultipleChoiceOptions(questions);
+  // TIER 2: Cấu trúc câu hỏi trắc nghiệm nhiều câu (Multiple-Choice Quiz Blocks)
+  const quizResult = tryParseQuizBlocks(normalizedText, sourceName);
+  if (quizResult && quizResult.questions.length >= 2) {
+    normalizeMultipleChoiceOptions(quizResult.questions);
+    return quizResult;
+  }
+
+  // TIER 3: Cấu trúc Q&A Blocks (Q: ... A: ...)
+  const qnaResult = tryParseQnABlocks(normalizedText, sourceName);
+  if (qnaResult && qnaResult.questions.length >= 2) {
+    normalizeMultipleChoiceOptions(qnaResult.questions);
+    return qnaResult;
+  }
+
+  // TIER 4: Cấu trúc Bảng CSV/TSV từ PapaParse
+  const tableResult = tryParsePapaTable(normalizedText, sourceName);
+  if (tableResult && tableResult.questions.length >= 2) {
+    normalizeMultipleChoiceOptions(tableResult.questions);
+    return tableResult;
+  }
+
+  // TIER 5: Phân tích từng dòng thẻ từ vựng / ghi chú với các ký tự phân cách đa dạng
+  const lineResult = tryParseLineByLine(normalizedText, sourceName);
+  if (lineResult && lineResult.questions.length >= 2) {
+    normalizeMultipleChoiceOptions(lineResult.questions);
+    return lineResult;
+  }
+
+  // TIER 6: Dòng xen kẽ (Dòng lẻ: Thuật ngữ, Dòng chẵn: Định nghĩa)
+  const alternatingResult = tryParseAlternatingLines(normalizedText, sourceName);
+  if (alternatingResult && alternatingResult.questions.length >= 2) {
+    normalizeMultipleChoiceOptions(alternatingResult.questions);
+    return alternatingResult;
+  }
+
+  // Nếu bất kỳ tier nào có đúng 1 câu hỏi hợp lệ (khi người dùng thực sự chỉ paste 1 từ/câu)
+  if (quizResult && quizResult.questions.length === 1) {
+    normalizeMultipleChoiceOptions(quizResult.questions);
+    return quizResult;
+  }
+  if (qnaResult && qnaResult.questions.length === 1) {
+    normalizeMultipleChoiceOptions(qnaResult.questions);
+    return qnaResult;
+  }
+  if (tableResult && tableResult.questions.length === 1) {
+    normalizeMultipleChoiceOptions(tableResult.questions);
+    return tableResult;
+  }
+  if (lineResult && lineResult.questions.length === 1) {
+    normalizeMultipleChoiceOptions(lineResult.questions);
+    return lineResult;
+  }
+  if (alternatingResult && alternatingResult.questions.length === 1) {
+    normalizeMultipleChoiceOptions(alternatingResult.questions);
+    return alternatingResult;
+  }
+
+  // TIER 7: Fallback danh sách từ thô (Mỗi từ 1 dòng hoặc cách nhau bởi dấu phẩy/chấm phẩy)
+  const rawWordsResult = tryParseRawWords(normalizedText, sourceName);
+  normalizeMultipleChoiceOptions(rawWordsResult.questions);
+  return rawWordsResult;
+}
+
+/**
+ * PARSER KHỐI TRẮC NGHIỆM (Câu 1: ... A. ... B. ... C. ... D. ... Đáp án: ...)
+ */
+function tryParseQuizBlocks(text: string, sourceName: string): ParsedQuestionResult | null {
+  const rawLines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  const hasOptions = rawLines.some(l => /^[A-D][\.\)]\s+/i.test(l) || /^\([A-D]\)\s+/i.test(l));
+  const hasAnswers = rawLines.some(l => /^(đáp án|đáp án đúng|answer|ans|key|đ\/a)[\s:\.\-—–]+/i.test(l));
+
+  if (!hasOptions && !hasAnswers) {
+    return null;
+  }
+
+  const questions: Question[] = [];
+  let currentPrompt = '';
+  let currentOptions: string[] = [];
+  let currentAns = '';
+  let currentExp = '';
+  let currentTip = '';
+
+  const commitBlock = () => {
+    if (currentPrompt.trim()) {
+      questions.push(buildParsedQuestion(
+        currentPrompt.trim(),
+        currentOptions,
+        currentAns.trim(),
+        currentExp.trim(),
+        currentTip.trim(),
+        questions.length
+      ));
+    }
+    currentPrompt = '';
+    currentOptions = [];
+    currentAns = '';
+    currentExp = '';
+    currentTip = '';
+  };
+
+  const isQuestionStart = (line: string): boolean => {
+    if (/^(câu\s*\d+|q\d*|question\s*\d*|bài\s*\d+)[\s:\.]/i.test(line)) return true;
+    if (/^\d+[\.\)]\s+/.test(line)) {
+      if (currentPrompt && (currentOptions.length > 0 || currentAns)) return true;
+      if (!currentPrompt) return true;
+    }
+    return false;
+  };
+
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+
+    if (isQuestionStart(line)) {
+      commitBlock();
+      currentPrompt = line.replace(/^(câu\s*\d+|q\d*|question\d*|bài\s*\d+)[\s:\.]\s*/i, '').replace(/^\d+[\.\)]\s*/, '');
+    } else if (/^[A-D][\.\)]\s+/i.test(line) || /^\([A-D]\)\s+/i.test(line)) {
+      const opt = line.replace(/^(\([A-D]\)|[A-D][\.\)])\s+/i, '').trim();
+      currentOptions.push(opt);
+    } else if (/^(đáp án|đáp án đúng|answer|ans|key|đ\/a)[\s:\.\-—–]+/i.test(line)) {
+      currentAns = line.replace(/^(đáp án|đáp án đúng|answer|ans|key|đ\/a)[\s:\.\-—–]+/i, '').trim();
+    } else if (/^(giải thích|lý do|explanation|exp|ghi chú)[\s:\.\-—–]+/i.test(line)) {
+      currentExp = line.replace(/^(giải thích|lý do|explanation|exp|ghi chú)[\s:\.\-—–]+/i, '').trim();
+    } else if (/^(mẹo|mẹo nhớ|tip|mnemonic)[\s:\.\-—–]+/i.test(line)) {
+      currentTip = line.replace(/^(mẹo|mẹo nhớ|tip|mnemonic)[\s:\.\-—–]+/i, '').trim();
+    } else if (!currentPrompt) {
+      currentPrompt = line;
+    } else if (currentOptions.length === 0 && !currentAns) {
+      currentPrompt += '\n' + line;
+    } else if (currentAns || currentOptions.length >= 2) {
+      commitBlock();
+      currentPrompt = line;
+    }
+  }
+  commitBlock();
+
+  if (questions.length > 0) {
+    return {
+      questions,
+      errors: [],
+      totalRows: rawLines.length,
+      fileName: sourceName
+    };
+  }
+  return null;
+}
+
+/**
+ * PARSER KHỐI Q&A (Q: ... A: ...)
+ */
+function tryParseQnABlocks(text: string, sourceName: string): ParsedQuestionResult | null {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const qnaPattern = lines.some(l => /^[Qq](uestion)?\s*[\d]*\s*[:\.]\s*/i.test(l) || /^hỏi\s*[\d]*\s*[:\.]/i.test(l)) &&
+                     lines.some(l => /^[Aa](nswer)?\s*[\d]*\s*[:\.]\s*/i.test(l) || /^đáp\s*[\d]*\s*[:\.]/i.test(l));
+
+  if (!qnaPattern) return null;
+
+  const questions: Question[] = [];
+  let currentPrompt = '';
+  let currentAns = '';
+  let currentExp = '';
+  let currentTip = '';
+
+  const commitQnA = () => {
+    if (currentPrompt && currentAns) {
+      questions.push(buildParsedQuestion(currentPrompt, [currentAns], currentAns, currentExp, currentTip, questions.length));
+    }
+    currentPrompt = '';
+    currentAns = '';
+    currentExp = '';
+    currentTip = '';
+  };
+
+  for (const line of lines) {
+    if (/^([Qq](uestion)?\s*[\d]*\s*[:\.]|hỏi\s*[\d]*\s*[:\.])\s*/i.test(line)) {
+      commitQnA();
+      currentPrompt = line.replace(/^([Qq](uestion)?\s*[\d]*\s*[:\.]|hỏi\s*[\d]*\s*[:\.])\s*/i, '').trim();
+    } else if (/^([Aa](nswer)?\s*[\d]*\s*[:\.]|đáp\s*[\d]*\s*[:\.])\s*/i.test(line)) {
+      currentAns = line.replace(/^([Aa](nswer)?\s*[\d]*\s*[:\.]|đáp\s*[\d]*\s*[:\.])\s*/i, '').trim();
+    } else if (/^(giải thích|lý do|exp|explanation)[\s:\.\-—–]+/i.test(line)) {
+      currentExp = line.replace(/^(giải thích|lý do|exp|explanation)[\s:\.\-—–]+/i, '').trim();
+    } else if (/^(mẹo|mẹo nhớ|tip|mnemonic)[\s:\.\-—–]+/i.test(line)) {
+      currentTip = line.replace(/^(mẹo|mẹo nhớ|tip|mnemonic)[\s:\.\-—–]+/i, '').trim();
+    } else if (currentPrompt && !currentAns) {
+      currentPrompt += ' ' + line;
+    }
+  }
+  commitQnA();
+
+  if (questions.length > 0) {
+    return { questions, errors: [], totalRows: lines.length, fileName: sourceName };
+  }
+  return null;
+}
+
+/**
+ * PARSER BẢNG CSV / TSV BẰNG PAPAPARSE
+ */
+function tryParsePapaTable(text: string, sourceName: string): ParsedQuestionResult | null {
+  try {
+    const parseResult = Papa.parse(text, { skipEmptyLines: 'greedy' });
+    const rows = (parseResult.data as string[][]).filter(r => Array.isArray(r) && r.some(cell => String(cell).trim()));
+
+    if (rows.length >= 2) {
+      const multiColCount = rows.filter(r => r.length >= 2).length;
+      if (multiColCount >= rows.length * 0.7) {
+        const row0 = rows[0].map(c => String(c).trim().toLowerCase());
+        const hasHeader = row0.some(c =>
+          ['câu hỏi', 'thuật ngữ', 'term', 'question', 'từ vựng', 'đáp án', 'answer', 'nghĩa', 'definition'].some(h => c.includes(h))
+        );
+
+        const dataRows = hasHeader ? rows.slice(1) : rows;
+        const questions: Question[] = [];
+
+        dataRows.forEach((cols, idx) => {
+          const prompt = String(cols[0] || '').trim();
+          const answer = String(cols[1] || '').trim();
+          const explanation = String(cols[2] || '').trim() || `Định nghĩa: ${answer}`;
+          const tip = String(cols[3] || '').trim();
+
+          if (prompt && answer) {
+            questions.push({
+              id: `q-tbl-${Date.now()}-${idx}`,
+              type: 'multiple_choice',
+              prompt,
+              correctAnswer: answer,
+              options: [answer],
+              explanation,
+              example: '',
+              memoryTip: tip
+            });
+          }
+        });
+
+        if (questions.length >= 2) {
+          return {
+            questions,
+            errors: [],
+            totalRows: rows.length,
+            fileName: sourceName
+          };
+        }
+      }
+    }
+  } catch {
+    // Không thể parse bảng
+  }
+  return null;
+}
+
+/**
+ * PARSER TỪNG DÒNG THẺ VỚI CÁC DELIMITER (- , : , = , => , | , \t , , , ;)
+ */
+function tryParseLineByLine(text: string, sourceName: string): ParsedQuestionResult | null {
+  let rawItems = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  // Nếu người dùng dán tất cả thẻ trên 1 dòng phân cách bởi dấu chấm phẩy
+  if (rawItems.length === 1 && rawItems[0].includes(';')) {
+    rawItems = rawItems[0].split(';').map(i => i.trim()).filter(Boolean);
+  } else if (rawItems.some(l => l.includes(';') && (l.includes(' - ') || l.includes(' : ')))) {
+    const expanded: string[] = [];
+    rawItems.forEach(line => {
+      if (line.includes(';') && (line.includes(' - ') || line.includes(' : '))) {
+        line.split(';').forEach(sub => {
+          if (sub.trim()) expanded.push(sub.trim());
+        });
+      } else {
+        expanded.push(line);
+      }
+    });
+    rawItems = expanded;
+  }
+
+  const questions: Question[] = [];
+
+  rawItems.forEach((rawLine, index) => {
+    // Làm sạch số thứ tự hoặc gạch đầu dòng: "1. ", "1) ", "Câu 1: ", "- ", "* ", "• "
+    let line = rawLine
+      .replace(/^[-*•\s]*(\d+[\.\)]|từ\s*\d+[\.:]?|term\s*\d+[\.:]?|câu\s*\d+[\.:]?)\s*/i, '')
+      .replace(/^[-*•\s]+/, '')
+      .trim();
+
+    if (!line) return;
+
+    let parts: string[] = [];
+
+    if (line.includes('\t')) {
+      parts = line.split('\t').map(p => p.trim());
+    } else if (line.includes(' - ')) {
+      parts = line.split(' - ').map(p => p.trim());
+    } else if (line.includes(' : ')) {
+      parts = line.split(' : ').map(p => p.trim());
+    } else if (line.includes(' => ') || line.includes(' -> ') || line.includes(' → ')) {
+      parts = line.split(/\s*(?:=>|->|→)\s*/).map(p => p.trim());
+    } else if (line.includes(' = ')) {
+      parts = line.split(' = ').map(p => p.trim());
+    } else if (line.includes(' | ')) {
+      parts = line.split(' | ').map(p => p.trim());
+    } else if (line.includes(' // ')) {
+      parts = line.split(' // ').map(p => p.trim());
+    } else if (/^([^(]+)\s*\(([^)]+)\)$/.test(line)) {
+      const m = line.match(/^([^(]+)\s*\(([^)]+)\)$/);
+      if (m && m[1] && m[2]) {
+        parts = [m[1].trim(), m[2].trim()];
+      }
+    } else if (line.includes(':') && !line.includes('://')) {
+      const idx = line.indexOf(':');
+      parts = [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
+    } else if (line.includes(' = ') || (line.includes('=') && !line.startsWith('='))) {
+      const idx = line.indexOf('=');
+      parts = [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
+    } else if (line.includes(' / ') || (line.includes('/') && !line.includes('://') && !/^\d+\/\d+/.test(line))) {
+      const idx = line.indexOf('/');
+      parts = [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
+    } else if (line.includes(' - ') || (line.includes('-') && !line.startsWith('-'))) {
+      const idx = line.indexOf('-');
+      parts = [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
+    } else if (line.includes(',') && !/^\d+,\d+/.test(line)) {
+      const idx = line.indexOf(',');
+      parts = [line.slice(0, idx).trim(), line.slice(idx + 1).trim()];
+    }
+
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      const prompt = parts[0];
+      const answer = parts[1];
+      const explanation = parts[2] || `Định nghĩa: ${answer}`;
+      const memoryTip = parts[3] || '';
+
+      questions.push({
+        id: `q-paste-${Date.now()}-${index}`,
+        type: 'multiple_choice',
+        prompt,
+        correctAnswer: answer,
+        options: [answer],
+        explanation,
+        example: '',
+        memoryTip
+      });
+    }
+  });
+
+  if (questions.length > 0) {
+    return {
+      questions,
+      errors: [],
+      totalRows: rawItems.length,
+      fileName: sourceName
+    };
+  }
+  return null;
+}
+
+/**
+ * PARSER CÁC DÒNG XEN KẼ (Dòng 1: Thuật ngữ, Dòng 2: Định nghĩa)
+ */
+function tryParseAlternatingLines(text: string, sourceName: string): ParsedQuestionResult | null {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) return null;
+
+  const questions: Question[] = [];
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    const term = lines[i].replace(/^[-*•\s]*\d+[\.\)]\s*/, '').trim();
+    const def = lines[i + 1].trim();
+
+    if (term && def) {
+      questions.push({
+        id: `q-alt-${Date.now()}-${i / 2}`,
+        type: 'multiple_choice',
+        prompt: term,
+        correctAnswer: def,
+        options: [def],
+        explanation: `Định nghĩa: ${def}`,
+        example: '',
+        memoryTip: ''
+      });
+    }
+  }
+
+  if (questions.length >= 2) {
+    return {
+      questions,
+      errors: [],
+      totalRows: lines.length,
+      fileName: sourceName
+    };
+  }
+  return null;
+}
+
+/**
+ * PARSER DANH SÁCH TỪ THÔ (Mỗi từ 1 dòng hoặc cách nhau bởi dấu phẩy/chấm phẩy)
+ */
+function tryParseRawWords(text: string, sourceName: string): ParsedQuestionResult {
+  let rawWords: string[] = [];
+  if (text.includes('\n')) {
+    rawWords = text.split(/\r?\n/).map(w => w.trim()).filter(Boolean);
+  } else if (text.includes(',')) {
+    rawWords = text.split(',').map(w => w.trim()).filter(Boolean);
+  } else if (text.includes(';')) {
+    rawWords = text.split(';').map(w => w.trim()).filter(Boolean);
+  } else {
+    rawWords = [text.trim()];
+  }
+
+  const cleanedWords = rawWords
+    .map(w => w.replace(/^[-*•\s]*\d+[\.\)]\s*/, '').replace(/^[-*•\s]+/, '').trim())
+    .filter(Boolean);
+
+  const questions: Question[] = cleanedWords.map((word, idx) => ({
+    id: `q-raw-${Date.now()}-${idx}`,
+    type: 'multiple_choice',
+    prompt: word,
+    correctAnswer: word,
+    options: [word],
+    explanation: `Thuật ngữ cần ghi nhớ: ${word}`,
+    example: '',
+    memoryTip: `Ghi nhớ từ vựng "${word}".`
+  }));
 
   return {
     questions,
-    errors,
-    totalRows: lines.length,
+    errors: questions.length === 0 ? ['Không tìm thấy từ vựng nào hợp lệ trong văn bản.'] : [],
+    totalRows: cleanedWords.length,
     fileName: sourceName
   };
 }

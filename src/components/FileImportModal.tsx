@@ -149,7 +149,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
   };
 
   // Sample Text Presets for "Paste & Generate"
-  const handleInsertSample = (type: 'vocab' | 'quiz' | 'qna') => {
+  const handleInsertSample = (type: 'vocab' | 'quiz' | 'qna' | 'list') => {
     sound.playClick();
     if (type === 'vocab') {
       setPastedText(
@@ -160,6 +160,15 @@ Ephemeral - Phù du, chóng tàn, ngắn ngủi - Fashion trends are often ephem
 Mitigate - Giảm nhẹ, làm dịu bớt - Measures to mitigate risk in investment`
       );
       setNewSetTitle('Từ vựng tiếng Anh học thuật');
+    } else if (type === 'list') {
+      setPastedText(
+`Scrutinize: Xem xét, kiểm tra kỹ lưỡng
+Resilient: Kiên cường, mau phục hồi
+Pragmatic: Thực tế, thực dụng
+Pinnacle: Đỉnh cao, đỉnh chóp
+Enigma: Điều bí ẩn, khó hiểu`
+      );
+      setNewSetTitle('Từ vựng ngắn gọn (Dấu hai chấm)');
     } else if (type === 'quiz') {
       setPastedText(
 `Câu 1: Thuật ngữ nào chỉ tình trạng mức giá chung tăng liên tục theo thời gian?
@@ -452,7 +461,7 @@ Tip: Random Access = Truy xuất ngẫu nhiên.`
                 )}
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Hệ thống tự động nhận diện dấu gạch ngang ( - ), hai chấm ( : ), dấu Tab hoặc trắc nghiệm A, B, C, D.
+                Tự động nhận diện mọi định dạng: Gạch ngang ( - / – ), hai chấm ( : ), dấu phẩy ( , ), dấu bằng ( = ), tab, trắc nghiệm A, B, C, D, khối Q&amp;A hoặc danh sách từ đơn.
               </p>
             </div>
 
@@ -466,7 +475,14 @@ Tip: Random Access = Truy xuất ngẫu nhiên.`
                 onClick={() => handleInsertSample('vocab')}
                 className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition cursor-pointer"
               >
-                + Mẫu Từ vựng (Term - Def)
+                + Mẫu Gạch ngang (Term - Def)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleInsertSample('list')}
+                className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 transition cursor-pointer"
+              >
+                + Mẫu Hai chấm (Term: Def)
               </button>
               <button
                 type="button"
@@ -490,7 +506,7 @@ Tip: Random Access = Truy xuất ngẫu nhiên.`
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
                 rows={7}
-                placeholder={`Dán nội dung học tập tại đây. Ví dụ:\n\nTenant - Người thuê nhà - Thường ký hợp đồng với chủ trọ - Mẹo: 10 người thuê\nLandlord - Chủ cho thuê bất động sản - Sở hữu tài sản - Mẹo: Land + Lord\n\nHoặc:\nCâu 1: Lạm phát là gì?\nA. Giá cả tăng liên tục\nB. Giá cả giảm\nC. Thất nghiệp tăng\nD. Tiền tệ mạnh lên\nĐáp án: A\nGiải thích: Lạm phát làm suy giảm sức mua.`}
+                placeholder={`Dán nội dung học tập tại đây. Hỗ trợ mọi định dạng:\n\n1. Dấu gạch ngang / hai chấm:\nTenant - Người thuê nhà - Hợp đồng thuê\nLandlord : Chủ cho thuê bất động sản\nScrutinize = Xem xét kỹ lưỡng\n\n2. Dấu phẩy hoặc danh sách:\nApple, Quả táo\nBanana, Quả chuối\n\n3. Trắc nghiệm A, B, C, D:\nCâu 1: Lạm phát là gì?\nA. Giá cả tăng liên tục\nB. Giá cả giảm\nĐáp án: A\nGiải thích: Lạm phát làm giảm sức mua.`}
                 className="w-full p-4 text-xs font-mono rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/80 dark:border-white/10 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#007afc] focus:ring-2 focus:ring-[#007afc]/20 transition"
               />
               {pastedText && (
