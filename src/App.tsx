@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './lib/auth-context';
 import { AppStateProvider, useAppState } from './lib/app-state';
 import { AuthScreen } from './components/AuthScreen';
-import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { AnalyticsView } from './components/AnalyticsView';
 import { SetDetailView } from './components/SetDetailView';
 import { FlashcardMode } from './components/FlashcardMode';
 import { QuizMode } from './components/QuizMode';
@@ -18,8 +19,16 @@ import { FileImportModal } from './components/FileImportModal';
 import { CourseModal } from './components/CourseModal';
 import { SetModal } from './components/SetModal';
 import { QuestionModal } from './components/QuestionModal';
+import { DatabaseSetupModal } from './components/DatabaseSetupModal';
 import { Course, StudySet, Question } from './types';
-import { Layers, Upload, Plus, Home, Cloud, AlertCircle, RefreshCw } from 'lucide-react';
+import {
+  Menu,
+  AlertCircle,
+  Database,
+  RefreshCw,
+  Sparkles
+} from 'lucide-react';
+import { sound } from './lib/sound';
 
 function MainApp() {
   const {
@@ -47,6 +56,30 @@ function MainApp() {
     recordQuizResult
   } = useAppState();
 
+  // Navigation View State
+  const [currentView, setCurrentView] = useState<'dashboard' | 'modules' | 'analytics'>('dashboard');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Dark Mode State
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('flow_dark_mode');
+    if (saved !== null) return saved === 'true';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    localStorage.setItem('flow_dark_mode', String(isDarkMode));
+  }, [isDarkMode]);
+
+  const handleToggleDarkMode = () => {
+    setIsDarkMode(prev => !prev);
+  };
+
   // Modal States
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importTargetSetId, setImportTargetSetId] = useState<string | null>(null);
@@ -59,6 +92,7 @@ function MainApp() {
 
   const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [isDbSetupModalOpen, setIsDbSetupModalOpen] = useState(false);
 
   // Active Set and Course
   const currentSet = studySets.find(s => s.id === activeSetId) || null;
@@ -66,38 +100,45 @@ function MainApp() {
 
   // Handlers for Modals
   const handleOpenImport = (targetSet?: string | null) => {
+    sound.playClick();
     setImportTargetSetId(targetSet || null);
     setIsImportModalOpen(true);
   };
 
   const handleOpenNewCourse = () => {
+    sound.playClick();
     setEditingCourse(null);
     setIsCourseModalOpen(true);
   };
 
   const handleOpenEditCourse = (course: Course) => {
+    sound.playClick();
     setEditingCourse(course);
     setIsCourseModalOpen(true);
   };
 
   const handleOpenNewSet = () => {
+    sound.playClick();
     setEditingSet(null);
     setIsSetModalOpen(true);
   };
 
   const handleOpenEditSet = () => {
     if (currentSet) {
+      sound.playClick();
       setEditingSet(currentSet);
       setIsSetModalOpen(true);
     }
   };
 
   const handleOpenAddQuestion = () => {
+    sound.playClick();
     setEditingQuestion(null);
     setIsQuestionModalOpen(true);
   };
 
   const handleOpenEditQuestion = (q: Question) => {
+    sound.playClick();
     setEditingQuestion(q);
     setIsQuestionModalOpen(true);
   };
@@ -112,38 +153,100 @@ function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FCFAF6] text-[#1F1F28] flex flex-col justify-between selection:bg-[#5B2DFF] selection:text-white pb-24 sm:pb-10">
-      <div>
-        {/* Sticky Top Bar Header with Supabase Auth Profile */}
-        <Navbar
-          onOpenImportModal={() => handleOpenImport()}
-          onOpenNewCourseModal={handleOpenNewCourse}
-          onOpenNewSetModal={handleOpenNewSet}
-        />
+    <div className="min-h-screen flex text-slate-900 dark:text-slate-100 transition-colors selection:bg-[#007afc] selection:text-white">
+      {/* 1. FIXED GLASSMORPHISM SIDEBAR (280px) */}
+      <Sidebar
+        currentView={currentView}
+        onNavigateView={(view) => {
+          setCurrentView(view);
+          if (view === 'dashboard' || view === 'analytics') {
+            setActiveSetId(null);
+            setActiveMode(null);
+          }
+        }}
+        onOpenNewCourse={handleOpenNewCourse}
+        onOpenNewSet={handleOpenNewSet}
+        onOpenImport={() => handleOpenImport()}
+        onOpenDbSetup={() => setIsDbSetupModalOpen(true)}
+        isOpenMobile={isMobileSidebarOpen}
+        onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={handleToggleDarkMode}
+      />
 
-        {/* Sync Status Banner (if sync error occurs or offline) */}
-        {syncError && (
-          <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2 text-xs text-amber-800 flex items-center justify-between">
-            <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  <strong>Đang dùng dữ liệu ngoại tuyến (Offline):</strong> {syncError}
-                </span>
-              </div>
-              <button
-                onClick={() => refreshFromSupabase(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition font-medium cursor-pointer"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Thử lại</span>
-              </button>
+      {/* 2. MAIN CONTENT AREA (Occupies remaining width with 280px left margin on desktop) */}
+      <div className="flex-1 min-w-0 lg:ml-[280px] flex flex-col min-h-screen">
+        {/* Mobile Header Bar */}
+        <header className="lg:hidden sticky top-0 z-30 px-4 py-3 flex items-center justify-between glass-card-sm border-b border-white/40 dark:border-white/10">
+          <button
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="p-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-white/60 dark:hover:bg-white/10 transition"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-[#007afc] to-purple-500 flex items-center justify-center text-white shadow-xs">
+              <Sparkles className="w-3.5 h-3.5" />
             </div>
+            <span className="font-bold text-sm tracking-tight text-slate-900 dark:text-white">
+              QUIZSTUDY
+            </span>
           </div>
-        )}
 
-        {/* Dynamic View Router */}
-        <main>
+          <div className="w-8" />
+        </header>
+
+        {/* Sync Status Banner (if offline or database schema notice) */}
+        {syncError && (() => {
+          const isSchemaError = Boolean(
+            syncError.toLowerCase().includes('courses') ||
+            syncError.toLowerCase().includes('schema cache') ||
+            syncError.toLowerCase().includes('could not find the table')
+          );
+
+          return (
+            <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 text-xs text-amber-900 dark:text-amber-200 transition-all">
+              <div className="max-w-6xl mx-auto w-full flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>
+                    <strong>Dữ liệu ngoại tuyến:</strong>{' '}
+                    {isSchemaError ? (
+                      <span>
+                        Dự án Supabase chưa được tạo bảng dữ liệu (<code className="font-mono bg-amber-200/60 dark:bg-amber-950/60 px-1 py-0.5 rounded text-[11px]">public.courses</code>).
+                      </span>
+                    ) : (
+                      syncError
+                    )}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 self-end sm:self-auto">
+                  {isSchemaError && (
+                    <button
+                      onClick={() => setIsDbSetupModalOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition font-medium cursor-pointer shadow-xs text-xs"
+                    >
+                      <Database className="w-3.5 h-3.5" />
+                      <span>Khắc phục: Tạo bảng SQL (1-Click)</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={() => refreshFromSupabase(true)}
+                    disabled={isSyncing}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 rounded-lg hover:bg-amber-50 transition font-medium cursor-pointer text-xs"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isSyncing ? 'Đang thử...' : 'Thử lại'}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Dynamic Route View */}
+        <main className="flex-1 pb-16">
           {activeMode === 'flashcard' && currentSet ? (
             <FlashcardMode
               key={`fc-${currentSet.id}`}
@@ -190,6 +293,13 @@ function MainApp() {
               onOpenEditSet={handleOpenEditSet}
               onDeleteSet={() => deleteStudySet(currentSet.id)}
             />
+          ) : currentView === 'analytics' ? (
+            <AnalyticsView
+              onStudySet={(setId, mode) => {
+                setActiveSetId(setId);
+                setActiveMode(mode);
+              }}
+            />
           ) : (
             <DashboardView
               onOpenNewCourse={handleOpenNewCourse}
@@ -201,74 +311,7 @@ function MainApp() {
         </main>
       </div>
 
-      {/* Footer (Clean Warm Ivory & Lilac Flow) */}
-      <footer className="mt-16 border-t border-black/[0.04] py-8 text-center text-xs text-[#8E8E93]">
-        <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-2">
-          <span className="font-flow-serif text-sm font-medium text-[#1F1F28]">QUIZSTUDY / FLOW</span>
-          <span aria-hidden="true">&bull;</span>
-          <span>Ứng dụng học tập (made by NHH and Gehihi)</span>
-        </div>
-      </footer>
-
-      {/* Mobile Bottom Dock for Thumb-reach Navigation (iPhone & iPad) */}
-      <nav
-        style={{
-          boxShadow: '0 -10px 30px rgba(91, 45, 255, 0.04), 0 -1px 3px rgba(0, 0, 0, 0.02)',
-        }}
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-black/[0.06] px-6 py-2 flex items-center justify-around text-[#8E8E93]"
-      >
-        <button
-          onClick={() => {
-            setActiveSetId(null);
-            setActiveMode(null);
-          }}
-          className={`flex flex-col items-center gap-1 text-[11px] cursor-pointer ${
-            !activeSetId && !activeMode ? 'text-[#5B2DFF] font-semibold' : ''
-          }`}
-        >
-          <Home className="w-5 h-5 stroke-[2]" />
-          <span>Tổng quan</span>
-        </button>
-
-        <button
-          onClick={() => {
-            setActiveSetId(null);
-            setActiveMode(null);
-          }}
-          className={`flex flex-col items-center gap-1 text-[11px] cursor-pointer ${
-            activeSetId ? 'text-[#5B2DFF] font-semibold' : ''
-          }`}
-        >
-          <Layers className="w-5 h-5 stroke-[2]" />
-          <span>Bộ thẻ</span>
-        </button>
-
-        <button
-          onClick={handleOpenNewSet}
-          className="flex flex-col items-center gap-1 text-[11px] text-[#5B2DFF] font-semibold cursor-pointer"
-        >
-          <div
-            style={{
-              backgroundColor: '#5B2DFF',
-              boxShadow: '0 8px 18px rgba(91, 45, 255, 0.35)',
-            }}
-            className="w-10 h-10 rounded-full text-white flex items-center justify-center -mt-5 hover:scale-105 active:scale-95 transition-transform"
-          >
-            <Plus className="w-5 h-5 stroke-[2.4]" />
-          </div>
-          <span>Tạo mới</span>
-        </button>
-
-        <button
-          onClick={() => handleOpenImport()}
-          className="flex flex-col items-center gap-1 text-[11px] hover:text-[#1F1F28] cursor-pointer"
-        >
-          <Upload className="w-5 h-5 stroke-[2]" />
-          <span>Nhập file</span>
-        </button>
-      </nav>
-
-      {/* MODALS (ALL STYLED IN LILAC FLOW) */}
+      {/* ALL MODALS */}
       <FileImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -291,18 +334,15 @@ function MainApp() {
       <SetModal
         isOpen={isSetModalOpen}
         onClose={() => setIsSetModalOpen(false)}
-        onSave={async (data) => {
+        courses={courses}
+        onSave={(data) => {
           if (editingSet) {
-            await updateStudySet(editingSet.id, data);
+            updateStudySet(editingSet.id, data);
           } else {
-            const newSet = await addStudySet(data);
-            setActiveSetId(newSet.id);
-            setActiveMode(null);
+            addStudySet(data);
           }
         }}
-        courses={courses}
         initialSet={editingSet}
-        defaultCourseId={activeCourseId}
       />
 
       <QuestionModal
@@ -311,41 +351,37 @@ function MainApp() {
         onSave={handleSaveQuestion}
         initialQuestion={editingQuestion}
       />
+
+      <DatabaseSetupModal
+        isOpen={isDbSetupModalOpen}
+        onClose={() => setIsDbSetupModalOpen(false)}
+        onRetrySync={async () => {
+          await refreshFromSupabase(true);
+        }}
+      />
     </div>
   );
 }
 
-function AuthenticatedApp() {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#FCFAF6] flex flex-col items-center justify-center">
-        <div className="w-10 h-10 border-3 border-[#5B2DFF]/20 border-t-[#5B2DFF] rounded-full animate-spin mb-4" />
-        <span className="text-xs uppercase tracking-widest text-[#8E8E93] font-medium font-mono">
-          Đang kiểm tra phiên đăng nhập...
-        </span>
-      </div>
-    );
-  }
-
-  // Protected Routes: If not logged in, show clean AuthScreen (Login/Signup)
-  if (!user) {
-    return <AuthScreen />;
-  }
-
-  // If logged in, provide AppState isolated to the current user
-  return (
-    <AppStateProvider>
-      <MainApp />
-    </AppStateProvider>
-  );
-}
-
-export default function App() {
+export function App() {
   return (
     <AuthProvider>
-      <AuthenticatedApp />
+      <AppStateProvider>
+        <AuthGate />
+      </AppStateProvider>
     </AuthProvider>
   );
 }
+
+function AuthGate() {
+  const { user, isConfigured } = useAuth();
+
+  // If Supabase is configured and user is not logged in, show Auth Screen
+  if (isConfigured && !user) {
+    return <AuthScreen />;
+  }
+
+  return <MainApp />;
+}
+
+export default App;

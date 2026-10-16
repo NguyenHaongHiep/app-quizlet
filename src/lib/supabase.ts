@@ -256,4 +256,7 @@ create policy "Users can view and manage their stats"
   on public.user_stats for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
+
+-- 4. Đánh thức PostgREST làm mới bộ nhớ đệm (schema cache) ngay lập tức
+NOTIFY pgrst, 'reload schema';
 `;

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import confetti from 'canvas-confetti';
 import { ArrowLeft, Clock, RotateCcw, Trophy, CheckCircle2, Sparkles, Check } from 'lucide-react';
 import { StudySet, Question } from '../types';
+import { sound } from '../lib/sound';
 
 interface MatchModeProps {
   studySet: StudySet;
@@ -66,101 +67,114 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
       });
     });
 
-    // Xáo trộn 12 ô thẻ
+    // Xáo trộn 12 ô
     setTiles(generatedTiles.sort(() => 0.5 - Math.random()));
     setIsRunning(true);
 
+    // Bắt đầu đếm thời gian
+    const startTime = Date.now();
     timerRef.current = setInterval(() => {
-      setElapsedTime(prev => prev + 0.1);
+      setElapsedTime((Date.now() - startTime) / 1000);
     }, 100);
   };
 
-  const handleTileClick = (tileId: string) => {
-    if (isGameOver) return;
-    const clicked = tiles.find(t => t.id === tileId);
-    if (!clicked || clicked.isMatched) return;
+  const handleTileClick = (clickedTile: TileItem) => {
+    if (clickedTile.isMatched || clickedTile.isWrong || isGameOver) return;
 
-    // Chưa chọn ô nào trước đó
+    sound.playClick();
+
+    // Chưa chọn ô nào trước đó -> chọn ô này
     if (!selectedTileId) {
-      setSelectedTileId(tileId);
+      setSelectedTileId(clickedTile.id);
       return;
     }
 
-    // Nhấp vào chính nó
-    if (selectedTileId === tileId) {
+    // Bấm lại đúng ô đang chọn -> hủy chọn
+    if (selectedTileId === clickedTile.id) {
       setSelectedTileId(null);
       return;
     }
 
-    // Đã chọn ô thứ 2, kiểm tra ghép đôi
-    const first = tiles.find(t => t.id === selectedTileId);
-    if (!first) return;
+    // Đã chọn ô thứ 2 -> Kiểm tra khớp cặp
+    const firstTile = tiles.find(t => t.id === selectedTileId);
+    if (!firstTile) {
+      setSelectedTileId(null);
+      return;
+    }
 
-    if (first.pairKey === clicked.pairKey && first.isTerm !== clicked.isTerm) {
-      // GHÉP ĐÚNG CẶP!
-      setTiles(prev =>
-        prev.map(t =>
-          t.id === first.id || t.id === clicked.id
-            ? { ...t, isMatched: true, isWrong: false }
-            : t
-        )
-      );
+    // Không cho ghép 2 thẻ cùng loại (ví dụ 2 thuật ngữ với nhau)
+    if (firstTile.isTerm === clickedTile.isTerm) {
+      setSelectedTileId(clickedTile.id);
+      return;
+    }
+
+    // Khớp cặp chính xác
+    if (firstTile.pairKey === clickedTile.pairKey) {
+      sound.playCorrect();
+      setTiles(prev => prev.map(t => {
+        if (t.id === firstTile.id || t.id === clickedTile.id) {
+          return { ...t, isMatched: true };
+        }
+        return t;
+      }));
       setSelectedTileId(null);
 
-      // Kiểm tra xem đã ghép hết chưa
+      // Kiểm tra hoàn thành tất cả
       setTimeout(() => {
-        setTiles(latest => {
-          const allMatched = latest.every(t => t.isMatched);
-          if (allMatched) {
+        setTiles(currentTiles => {
+          const remaining = currentTiles.filter(t => !t.isMatched);
+          if (remaining.length === 0) {
             clearInterval(timerRef.current);
             setIsRunning(false);
             setIsGameOver(true);
+            sound.playComplete();
             try {
               confetti({
                 particleCount: 80,
                 spread: 70,
-                origin: { y: 0.6 },
-                colors: ['#5B2DFF', '#C8B4FF', '#10B981']
+                origin: { y: 0.6 }
               });
-            } catch (err) {
-              // safe fallback
+            } catch {
+              // Confetti fallback
             }
           }
-          return latest;
+          return currentTiles;
         });
-      }, 300);
+      }, 200);
     } else {
-      // GHÉP SAI
-      setTiles(prev =>
-        prev.map(t =>
-          t.id === first.id || t.id === clicked.id
-            ? { ...t, isWrong: true }
-            : t
-        )
-      );
+      // Sai cặp -> Rung lắc và báo đỏ
+      sound.playWrong();
+      setTiles(prev => prev.map(t => {
+        if (t.id === firstTile.id || t.id === clickedTile.id) {
+          return { ...t, isWrong: true };
+        }
+        return t;
+      }));
+      setSelectedTileId(null);
+
       setTimeout(() => {
-        setTiles(prev =>
-          prev.map(t =>
-            t.id === first.id || t.id === clicked.id
-              ? { ...t, isWrong: false }
-              : t
-          )
-        );
-        setSelectedTileId(null);
-      }, 700);
+        setTiles(prev => prev.map(t => {
+          if (t.id === firstTile.id || t.id === clickedTile.id) {
+            return { ...t, isWrong: false };
+          }
+          return t;
+        }));
+      }, 600);
     }
   };
 
   if (studySet.questions.length < 2) {
     return (
-      <div className="max-w-md mx-auto px-4 py-16 text-center space-y-4">
-        <h3 className="font-flow-serif text-2xl font-normal text-[#1F1F28]">Cần tối thiểu 2 câu hỏi</h3>
-        <p className="text-xs text-[#8E8E93]">Chế độ Ghép thẻ tính giờ yêu cầu tối thiểu 2 thuật ngữ trong bộ thẻ.</p>
+      <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Không đủ dữ liệu ghép thẻ</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          Bộ thẻ cần tối thiểu 2 câu hỏi/thuật ngữ để tạo trò chơi ghép thẻ.
+        </p>
         <button
           onClick={onBack}
-          className="mt-2 px-6 py-2.5 rounded-full text-xs font-semibold text-white bg-[#5B2DFF] shadow-[0_8px_20px_rgba(91,45,255,0.35)] cursor-pointer"
+          className="mt-2 px-6 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 transition cursor-pointer shadow-sm"
         >
-          Quay lại
+          Quay lại bộ thẻ
         </button>
       </div>
     );
@@ -168,33 +182,35 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-in fade-in duration-200">
-      {/* Top bar */}
-      <div className="flex items-center justify-between gap-4">
+      {/* Top Header */}
+      <div className="flex items-center justify-between gap-4 glass-card-sm p-4 rounded-2xl">
         <div className="flex items-center gap-3">
           <button
-            onClick={onBack}
-            style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-            className="p-2 text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            onClick={() => {
+              sound.playClick();
+              onBack();
+            }}
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10 transition"
             title="Thoát trò chơi"
           >
-            <ArrowLeft className="w-4 h-4 text-[#5B2DFF]" />
+            <ArrowLeft className="w-4 h-4 text-[#007afc]" />
           </button>
           <div>
-            <div className="flex items-center gap-2 text-[11px] font-medium text-[#8E8E93]">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
               <span className="uppercase tracking-wider">Ghép thẻ tốc độ</span>
               <span aria-hidden="true">&bull;</span>
-              <span className="text-[#1F1F28] font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
+              <span className="text-slate-900 dark:text-white font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
             </div>
-            <h2 className="font-flow-serif text-lg sm:text-xl font-normal text-[#1F1F28]">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
               Nối đúng cặp nhanh nhất
             </h2>
           </div>
         </div>
 
         {/* Timer pill */}
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white border border-black/[0.06] shadow-2xs">
-          <Clock className="w-4 h-4 text-[#5B2DFF]" />
-          <span className="font-mono text-sm font-semibold text-[#1F1F28]">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/80 dark:bg-white/10 border border-white/60 dark:border-white/10 shadow-xs">
+          <Clock className="w-4 h-4 text-[#007afc]" />
+          <span className="font-mono text-sm font-bold text-slate-900 dark:text-white">
             {elapsedTime.toFixed(1)}s
           </span>
         </div>
@@ -202,58 +218,49 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
 
       {/* Màn hình chiến thắng khi hoàn thành */}
       {isGameOver ? (
-        <div
-          style={{
-            boxShadow: '0 16px 36px rgba(91, 45, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.02)',
-          }}
-          className="bg-white rounded-3xl p-8 sm:p-12 border border-black/[0.05] text-center space-y-6 animate-in zoom-in-95 duration-300 max-w-lg mx-auto"
-        >
-          <div
-            style={{ boxShadow: '0 8px 24px rgba(91, 45, 255, 0.35)' }}
-            className="w-16 h-16 mx-auto rounded-full bg-[#5B2DFF] text-white flex items-center justify-center"
-          >
-            <Trophy className="w-8 h-8 stroke-[2.2]" />
+        <div className="glass-card rounded-3xl p-8 sm:p-12 text-center space-y-6 animate-in zoom-in-95 duration-300 max-w-lg mx-auto">
+          <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
+            <Trophy className="w-8 h-8 stroke-[2.2] animate-bounce" />
           </div>
 
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#EDE8FF] text-[#5B2DFF] border border-[#5B2DFF]/15">
-              <Sparkles className="w-3 h-3" /> Thành tích xuất sắc
-            </div>
-            <h3 className="font-flow-serif text-3xl font-normal text-[#1F1F28]">Hoàn thành thử thách!</h3>
-            <p className="text-xs text-[#8E8E93]">
+            <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Hoàn thành thử thách!</h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Bạn đã ghép chính xác toàn bộ các cặp thuật ngữ và định nghĩa.
             </p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#FCFAF6] border border-black/[0.05]">
-            <p className="text-[11px] uppercase tracking-wider font-semibold text-[#8E8E93]">Thời gian hoàn thành</p>
-            <p className="font-flow-serif text-4xl font-medium text-[#5B2DFF] mt-1">
-              {elapsedTime.toFixed(1)} <span className="text-sm font-sans text-[#8E8E93]">giây</span>
+          <div className="p-5 rounded-2xl bg-white/60 dark:bg-white/[0.04] border border-white/50 dark:border-white/5">
+            <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400">Thời gian hoàn thành</p>
+            <p className="text-4xl font-bold font-mono text-[#007afc] mt-1">
+              {elapsedTime.toFixed(1)} <span className="text-sm font-sans text-slate-400">giây</span>
             </p>
           </div>
 
           <div className="flex justify-center gap-3 pt-2">
             <button
-              onClick={initGame}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs font-semibold text-[#1F1F28] bg-[#FCFAF6] hover:bg-[#F3EFE6] border border-black/[0.06] transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              onClick={() => {
+                sound.playClick();
+                initGame();
+              }}
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white/80 dark:bg-white/10 hover:bg-white transition cursor-pointer"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-[#5B2DFF]" />
+              <RotateCcw className="w-3.5 h-3.5 text-[#007afc]" />
               <span>Chơi lại</span>
             </button>
             <button
-              onClick={onBack}
-              style={{
-                backgroundColor: '#5B2DFF',
-                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
+              onClick={() => {
+                sound.playClick();
+                onBack();
               }}
-              className="px-7 py-3 rounded-full text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              className="px-7 py-3 rounded-2xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 transition cursor-pointer shadow-sm"
             >
               Trở về bộ thẻ
             </button>
           </div>
         </div>
       ) : (
-        /* Grid 12 ô thẻ (Lilac Flow Style) */
+        /* Grid 12 ô thẻ */
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
           {tiles.map(tile => {
             const isSelected = selectedTileId === tile.id;
@@ -262,32 +269,29 @@ export const MatchMode: React.FC<MatchModeProps> = ({ studySet, onBack }) => {
               return (
                 <div
                   key={tile.id}
-                  className="min-h-[110px] sm:min-h-[130px] rounded-2xl border border-dashed border-emerald-300/40 bg-emerald-50/20 flex flex-col items-center justify-center p-3 opacity-40 transition-opacity"
+                  className="min-h-[110px] sm:min-h-[130px] rounded-2xl border border-dashed border-emerald-400/50 bg-emerald-500/10 flex flex-col items-center justify-center p-3 opacity-40 transition-opacity"
                 >
-                  <Check className="w-5 h-5 text-emerald-600" />
-                  <span className="text-[10px] text-emerald-700 font-medium mt-1">Đã khớp</span>
+                  <Check className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-medium mt-1">Đã khớp</span>
                 </div>
               );
             }
 
-            let tileClasses = 'bg-white border-black/[0.06] text-[#1F1F28] hover:border-[#5B2DFF]/40 hover:bg-[#F4EFFE]';
+            let tileClasses = 'glass-card text-slate-900 dark:text-slate-100 hover:border-[#007afc]/50 hover:bg-white dark:hover:bg-white/10';
             if (isSelected) {
-              tileClasses = 'border-[#5B2DFF] bg-[#EDE8FF] text-[#5B2DFF] ring-2 ring-[#5B2DFF]/30 font-semibold shadow-[0_8px_20px_rgba(91,45,255,0.25)]';
+              tileClasses = 'border-[#007afc] bg-sky-50 dark:bg-sky-950/40 text-[#007afc] dark:text-sky-300 ring-2 ring-[#007afc]/30 font-bold shadow-md';
             } else if (tile.isWrong) {
-              tileClasses = 'border-rose-400 bg-rose-50 text-rose-900 animate-shake';
+              tileClasses = 'border-rose-400 bg-rose-50 dark:bg-rose-950/40 text-rose-900 dark:text-rose-200 animate-shake';
             }
 
             return (
               <button
                 key={tile.id}
                 type="button"
-                onClick={() => handleTileClick(tile.id)}
-                style={{
-                  boxShadow: isSelected ? undefined : '0 10px 24px rgba(0, 0, 0, 0.02), 0 1px 3px rgba(0, 0, 0, 0.02)',
-                }}
+                onClick={() => handleTileClick(tile)}
                 className={`min-h-[110px] sm:min-h-[130px] p-4 rounded-2xl border text-xs sm:text-sm font-medium flex flex-col items-center justify-center text-center transition-all duration-200 cursor-pointer select-none ${tileClasses}`}
               >
-                <span className="line-clamp-4 leading-snug">{tile.text}</span>
+                <span className="leading-snug break-words">{tile.text}</span>
               </button>
             );
           })}

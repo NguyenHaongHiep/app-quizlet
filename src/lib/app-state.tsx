@@ -43,7 +43,7 @@ interface AppStateContextType {
   // Tiện ích
   resetToDefaultData: () => Promise<void>;
   exportAllDataAsJson: () => void;
-  refreshFromSupabase: (showLoadingSpinner?: boolean) => Promise<void>;
+  refreshFromSupabase: (showLoadingSpinner?: boolean) => Promise<boolean>;
 }
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
@@ -102,9 +102,9 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [syncError, setSyncError] = useState<string | null>(null);
 
   // Sync / fetch data from Supabase tied strictly to user_id
-  const refreshFromSupabase = useCallback(async (showLoadingSpinner = true) => {
+  const refreshFromSupabase = useCallback(async (showLoadingSpinner = true): Promise<boolean> => {
     const supabase = getSupabase();
-    if (!supabase || !userId || userId === 'guest-user') return;
+    if (!supabase || !userId || userId === 'guest-user') return false;
 
     if (showLoadingSpinner) {
       setIsSyncing(true);
@@ -218,11 +218,16 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             accuracyRate: dbStats.accuracy_rate || 100
           });
         }
+        setSyncError(null);
+        return true;
       }
+      setSyncError(null);
+      return true;
     } catch (err: any) {
       console.warn('Lỗi đồng bộ hóa với Supabase:', err.message || err);
       // Fallback to locally cached data
       setSyncError(err.message || 'Không thể đồng bộ với Supabase. Đang chạy ở chế độ cục bộ.');
+      return false;
     } finally {
       setIsSyncing(false);
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
@@ -10,14 +10,16 @@ import {
   RotateCcw,
   Trophy,
   ArrowRight,
-  MoveUp,
-  MoveDown,
   Volume2,
   Sparkles,
-  Check
+  Check,
+  X,
+  Shuffle,
+  Keyboard
 } from 'lucide-react';
 import { StudySet, Question, MatchingPair } from '../types';
 import { speakText } from '../lib/speech';
+import { sound } from '../lib/sound';
 
 interface QuizModeProps {
   studySet: StudySet;
@@ -25,11 +27,12 @@ interface QuizModeProps {
   onRecordResult: (correctCount: number, totalCount: number) => void;
 }
 
-interface UserAnswerRecord {
+type SpacedFilter = 'all' | 'mistaken' | 'starred' | 'mastered';
+
+interface AnswerRecord {
   questionId: string;
   isCorrect: boolean;
   userSelection: string;
-  correctAnswer: string;
 }
 
 export const QuizMode: React.FC<QuizModeProps> = ({
@@ -37,756 +40,510 @@ export const QuizMode: React.FC<QuizModeProps> = ({
   onBack,
   onRecordResult
 }) => {
-  const [questions, setQuestions] = useState<Question[]>(() => [...studySet.questions]);
+  const [filterMode, setFilterMode] = useState<SpacedFilter>('all');
+  const [isShuffleOn, setIsShuffleOn] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
+  // Fisher-Yates Shuffle
+  const shuffleArray = useCallback(<T,>(arr: T[]): T[] => {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }, []);
+
+  // Filter questions based on Spaced Repetition filter
+  const filteredQuestions = useMemo(() => {
+    let list = [...studySet.questions];
+    if (filterMode === 'starred') {
+      list = list.filter(q => q.starred);
+    } else if (filterMode === 'mastered') {
+      list = list.filter(q => q.mastered);
+    } else if (filterMode === 'mistaken') {
+      list = list.filter(q => q.lastAnsweredCorrect === false);
+    }
+
+    if (isShuffleOn) {
+      return shuffleArray(list);
+    }
+    return list;
+  }, [studySet.questions, filterMode, isShuffleOn, shuffleArray]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
-
-  // Đồng bộ danh sách câu hỏi khi bộ thẻ thay đổi
-  useEffect(() => {
-    setQuestions([...studySet.questions]);
-    setCurrentIndex(0);
-    setIsAnswered(false);
-    setAnswerHistory([]);
-    setIsCompleted(false);
-  }, [studySet.id, studySet.questions]);
-
-  // Trạng thái câu hiện tại
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [fillInput, setFillInput] = useState('');
-  
-  // Trạng thái nối cặp
-  const [matchingPairsLeft, setMatchingPairsLeft] = useState<{ id: string; text: string }[]>([]);
-  const [matchingPairsRight, setMatchingPairsRight] = useState<{ id: string; text: string }[]>([]);
-  const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
-  const [pairedMatches, setPairedMatches] = useState<Record<string, string>>({}); // leftId -> rightId
-
-  // Trạng thái sắp xếp
-  const [currentOrder, setCurrentOrder] = useState<string[]>([]);
-
-  // Feedback loop state: đã nộp đáp án hay chưa
   const [isAnswered, setIsAnswered] = useState(false);
   const [isCurrentCorrect, setIsCurrentCorrect] = useState(false);
-  const [answerHistory, setAnswerHistory] = useState<UserAnswerRecord[]>([]);
+  const [shakeCard, setShakeCard] = useState(false);
+  const [answerHistory, setAnswerHistory] = useState<AnswerRecord[]>([]);
   const [isCompleted, setIsCompleted] = useState(false);
 
-  const currentQ = questions[currentIndex];
-  const total = questions.length;
+  // Shuffled options for multiple choice
+  const currentQ = filteredQuestions[currentIndex];
+  const total = filteredQuestions.length;
 
-  // Khởi tạo trạng thái tương ứng mỗi khi chuyển câu hỏi
-  useEffect(() => {
-    if (!currentQ) return;
-    setIsAnswered(false);
-    setSelectedOption(null);
-    setFillInput('');
-    setIsCurrentCorrect(false);
-
-    if (currentQ.type === 'matching' && currentQ.matchingPairs) {
-      setMatchingPairsLeft(currentQ.matchingPairs.map(p => ({ id: p.id, text: p.left })));
-      // Xáo trộn cột bên phải
-      const shuffledRight = [...currentQ.matchingPairs]
-        .sort(() => 0.5 - Math.random())
-        .map(p => ({ id: p.id, text: p.right }));
-      setMatchingPairsRight(shuffledRight);
-      setPairedMatches({});
-      setSelectedLeft(null);
-    } else if (currentQ.type === 'ordering' && currentQ.orderingItems) {
-      // Xáo trộn thứ tự ban đầu để người học sắp xếp
-      const shuffled = [...currentQ.orderingItems].sort(() => 0.5 - Math.random());
-      setCurrentOrder(shuffled);
+  const currentOptions = useMemo(() => {
+    if (!currentQ || !currentQ.options) return [];
+    if (isShuffleOn) {
+      return shuffleArray(currentQ.options);
     }
+    return currentQ.options;
+  }, [currentQ, isShuffleOn, shuffleArray]);
+
+  // Reset state when current question changes
+  useEffect(() => {
+    setSelectedOption(null);
+    setIsAnswered(false);
+    setIsCurrentCorrect(false);
+    setShakeCard(false);
   }, [currentIndex, currentQ]);
 
-  // Xử lý nộp trắc nghiệm (Chọn đáp án là nộp ngay lập tức)
-  const handleSelectOption = (opt: string) => {
+  // Handler for selecting an option (before checking, or auto-check)
+  const handlePickOption = (option: string) => {
     if (isAnswered) return;
-    setSelectedOption(opt);
-    const correct = opt.trim().toLowerCase() === currentQ.correctAnswer.trim().toLowerCase();
-    commitAnswer(correct, opt);
+    sound.playClick();
+    setSelectedOption(option);
   };
 
-  // Xử lý nộp điền từ
-  const handleSubmitFill = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isAnswered || !fillInput.trim()) return;
-    const correct = fillInput.trim().toLowerCase() === currentQ.correctAnswer.trim().toLowerCase();
-    commitAnswer(correct, fillInput.trim());
-  };
+  // CHECK Answer Action
+  const handleCheckAnswer = useCallback(() => {
+    if (isAnswered || !currentQ || selectedOption === null) return;
 
-  // Xử lý ghép đôi khái niệm
-  const handleLeftClick = (leftId: string) => {
-    if (isAnswered) return;
-    setSelectedLeft(leftId);
-  };
-
-  const handleRightClick = (rightId: string) => {
-    if (isAnswered || !selectedLeft) return;
-    setPairedMatches(prev => ({
-      ...prev,
-      [selectedLeft]: rightId
-    }));
-    setSelectedLeft(null);
-  };
-
-  const handleSubmitMatching = () => {
-    if (isAnswered || !currentQ.matchingPairs) return;
-    // Kiểm tra xem tất cả các cặp đã nối đúng chưa (id phải khớp)
-    const isAllCorrect = currentQ.matchingPairs.every(pair => pairedMatches[pair.id] === pair.id);
-    commitAnswer(isAllCorrect, isAllCorrect ? 'Nối chính xác toàn bộ' : 'Một số cặp chưa đúng');
-  };
-
-  // Xử lý sắp xếp thứ tự
-  const handleMoveOrderItem = (index: number, direction: 'up' | 'down') => {
-    if (isAnswered) return;
-    const newOrder = [...currentOrder];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= newOrder.length) return;
-    const temp = newOrder[index];
-    newOrder[index] = newOrder[targetIndex];
-    newOrder[targetIndex] = temp;
-    setCurrentOrder(newOrder);
-  };
-
-  const handleSubmitOrdering = () => {
-    if (isAnswered || !currentQ.orderingItems) return;
-    const isAllCorrect = currentOrder.every((item, i) => item === currentQ.orderingItems![i]);
-    commitAnswer(isAllCorrect, currentOrder.join(' &rarr; '));
-  };
-
-  // Ghi nhận đáp án và hiển thị ngay Feedback tức thì
-  const commitAnswer = (correct: boolean, userAns: string) => {
-    setIsCurrentCorrect(correct);
+    const isCorrect = selectedOption.trim().toLowerCase() === currentQ.correctAnswer.trim().toLowerCase();
+    setIsCurrentCorrect(isCorrect);
     setIsAnswered(true);
 
-    const record: UserAnswerRecord = {
-      questionId: currentQ.id,
-      isCorrect: correct,
-      userSelection: userAns,
-      correctAnswer: currentQ.correctAnswer
-    };
-
-    setAnswerHistory(prev => [...prev, record]);
-
-    if (correct) {
-      try {
-        confetti({
-          particleCount: 28,
-          spread: 45,
-          origin: { y: 0.8 },
-          colors: ['#5B2DFF', '#C8B4FF', '#10B981']
-        });
-      } catch (err) {
-        // Safe fallback
-      }
+    if (isCorrect) {
+      sound.playCorrect();
+    } else {
+      sound.playWrong();
+      setShakeCard(true);
+      setTimeout(() => setShakeCard(false), 500);
     }
-  };
 
-  // Chuyển sang câu hỏi kế tiếp hoặc kết thúc bài thi
-  const handleNextQuestion = () => {
+    setAnswerHistory(prev => [
+      ...prev,
+      {
+        questionId: currentQ.id,
+        isCorrect,
+        userSelection: selectedOption
+      }
+    ]);
+  }, [isAnswered, currentQ, selectedOption]);
+
+  // NEXT Question Action
+  const handleNextQuestion = useCallback(() => {
+    sound.playClick();
     if (currentIndex + 1 < total) {
       setCurrentIndex(prev => prev + 1);
     } else {
-      setIsCompleted(true);
-      const totalCorrect = answerHistory.filter(h => h.isCorrect).length;
-      onRecordResult(totalCorrect, total);
+      // Completed quiz
+      sound.playComplete();
       try {
         confetti({
-          particleCount: 90,
-          spread: 75,
-          origin: { y: 0.5 },
-          colors: ['#5B2DFF', '#C8B4FF', '#10B981', '#F59E0B']
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 }
         });
-      } catch (err) {
-        // Safe fallback
+      } catch {
+        // Confetti fallback
       }
+
+      const totalCorrect = answerHistory.filter(a => a.isCorrect).length + (isCurrentCorrect ? 1 : 0);
+      onRecordResult(totalCorrect, total);
+      setIsCompleted(true);
     }
-  };
+  }, [currentIndex, total, isCurrentCorrect, answerHistory, onRecordResult]);
 
-  const handleRestartQuiz = () => {
-    setCurrentIndex(0);
-    setIsAnswered(false);
-    setAnswerHistory([]);
-    setIsCompleted(false);
-  };
+  // Keyboard navigation shortcuts: 1, 2, 3, 4 to choose options; Space/Enter to Check or Next
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
 
-  if (!currentQ && !isCompleted) {
+      if (!isAnswered && currentOptions.length > 0) {
+        if (e.key === '1' && currentOptions[0]) handlePickOption(currentOptions[0]);
+        else if (e.key === '2' && currentOptions[1]) handlePickOption(currentOptions[1]);
+        else if (e.key === '3' && currentOptions[2]) handlePickOption(currentOptions[2]);
+        else if (e.key === '4' && currentOptions[3]) handlePickOption(currentOptions[3]);
+      }
+
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        if (!isAnswered) {
+          if (selectedOption !== null) handleCheckAnswer();
+        } else {
+          handleNextQuestion();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAnswered, currentOptions, selectedOption, handleCheckAnswer, handleNextQuestion]);
+
+  if (total === 0) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
-        <div className="w-16 h-16 mx-auto rounded-full bg-[#EDE8FF] text-[#5B2DFF] flex items-center justify-center">
-          <BookOpen className="w-8 h-8 stroke-[2]" />
+        <div className="w-16 h-16 mx-auto rounded-3xl bg-white/70 dark:bg-white/5 border border-white/40 flex items-center justify-center text-sky-600 shadow-sm">
+          <BookOpen className="w-8 h-8" />
         </div>
-        <h3 className="font-flow-serif text-2xl font-normal text-[#1F1F28]">Bộ thẻ chưa có câu hỏi</h3>
-        <p className="text-xs text-[#8E8E93]">Hãy thêm câu hỏi trắc nghiệm hoặc nhập file trước khi kiểm tra.</p>
-        <button
-          onClick={onBack}
-          className="mt-2 px-6 py-2.5 rounded-full text-xs font-semibold text-white bg-[#5B2DFF] shadow-[0_8px_20px_rgba(91,45,255,0.35)] cursor-pointer"
-        >
-          Quay lại
-        </button>
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Không có câu hỏi kiểm tra</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+          {filterMode !== 'all'
+            ? 'Không có câu hỏi nào khớp với bộ lọc Spaced Repetition này.'
+            : 'Bộ thẻ hiện chưa có câu hỏi nào để luyện thi trắc nghiệm.'}
+        </p>
+        <div className="flex justify-center gap-3 pt-2">
+          {filterMode !== 'all' && (
+            <button
+              onClick={() => {
+                sound.playClick();
+                setFilterMode('all');
+                setCurrentIndex(0);
+              }}
+              className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 transition cursor-pointer shadow-sm"
+            >
+              Xem tất cả ({studySet.questions.length} câu)
+            </button>
+          )}
+          <button
+            onClick={onBack}
+            className="px-5 py-2.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 bg-white/70 dark:bg-white/10 hover:bg-white transition cursor-pointer"
+          >
+            Quay lại
+          </button>
+        </div>
       </div>
     );
   }
 
-  // MÀN HÌNH BÁO CÁO KẾT QUẢ CUỐI BÀI THI (SUMMARY SCREEN)
+  // Quiz Completed Score View
   if (isCompleted) {
-    const correctCount = answerHistory.filter(h => h.isCorrect).length;
-    const accuracy = Math.round((correctCount / total) * 100);
-
-    // SVG Circular progress ring
-    const radius = 54;
-    const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference - (accuracy / 100) * circumference;
+    const totalCorrect = answerHistory.filter(a => a.isCorrect).length;
+    const scorePct = Math.round((totalCorrect / total) * 100);
 
     return (
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-8 animate-in fade-in duration-300">
-        {/* Banner tổng kết */}
-        <div
-          style={{
-            boxShadow: '0 16px 36px rgba(91, 45, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.02)',
-          }}
-          className="bg-white rounded-3xl p-6 sm:p-10 border border-black/[0.05] text-center space-y-6"
-        >
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#EDE8FF] text-[#5B2DFF] border border-[#5B2DFF]/15">
-            <Sparkles className="w-3 h-3" /> Tổng kết bài thi trắc nghiệm
+      <div className="max-w-2xl mx-auto px-4 py-12 space-y-8 animate-in zoom-in-95 duration-300">
+        <div className="glass-card rounded-3xl p-8 sm:p-12 text-center space-y-6">
+          <div className="w-20 h-20 mx-auto rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
+            <Trophy className="w-10 h-10 animate-bounce" />
           </div>
 
-          <h2 className="font-flow-serif text-3xl sm:text-4xl font-normal text-[#1F1F28] tracking-tight">
-            {accuracy >= 80 ? 'Xuất sắc! Bạn nắm bài rất vững!' : accuracy >= 50 ? 'Khá tốt! Hãy ôn lại các câu chưa đúng.' : 'Cần cố gắng ôn kỹ hơn nhé!'}
-          </h2>
+          <div className="space-y-2">
+            <h2 className="text-3xl font-bold text-slate-900 dark:text-white">
+              Hoàn thành bài kiểm tra!
+            </h2>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Bạn đã ôn luyện xong bài kiểm tra cho bộ thẻ <strong>{studySet.title}</strong>
+            </p>
+          </div>
 
-          {/* Lilac Flow Circular Score Ring */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-8 py-4">
-            <div className="relative w-36 h-36 flex items-center justify-center">
-              <svg className="w-full h-full -rotate-90">
-                <circle
-                  cx="72"
-                  cy="72"
-                  r={radius}
-                  stroke="#EDE8FF"
-                  strokeWidth="8"
-                  fill="none"
-                />
-                <circle
-                  cx="72"
-                  cy="72"
-                  r={radius}
-                  stroke="#5B2DFF"
-                  strokeWidth="8"
-                  fill="none"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={strokeDashoffset}
-                  strokeLinecap="round"
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="font-flow-serif text-3xl font-medium text-[#1F1F28]">{accuracy}%</span>
-                <span className="text-[10px] uppercase tracking-wider text-[#8E8E93] font-semibold">Chính xác</span>
-              </div>
+          <div className="flex items-center justify-center gap-8 py-4">
+            <div className="text-center">
+              <span className="text-4xl font-bold font-mono text-[#007afc]">
+                {scorePct}%
+              </span>
+              <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-medium">Độ chính xác</p>
             </div>
-
-            <div className="grid grid-cols-2 gap-4 text-left">
-              <div className="p-4 rounded-2xl bg-[#FCFAF6] border border-black/[0.05]">
-                <p className="text-[11px] text-[#8E8E93] font-medium">Số câu trả lời đúng</p>
-                <p className="font-flow-serif text-2xl font-normal text-emerald-600 mt-0.5">
-                  {correctCount} <span className="text-xs text-[#8E8E93] font-sans">/ {total}</span>
-                </p>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-[#FCFAF6] border border-black/[0.05]">
-                <p className="text-[11px] text-[#8E8E93] font-medium">Số câu cần ôn lại</p>
-                <p className="font-flow-serif text-2xl font-normal text-rose-500 mt-0.5">
-                  {total - correctCount} <span className="text-xs text-[#8E8E93] font-sans">/ {total}</span>
-                </p>
-              </div>
+            <div className="h-10 w-px bg-slate-200 dark:bg-slate-700" />
+            <div className="text-center">
+              <span className="text-4xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                {totalCorrect}/{total}
+              </span>
+              <p className="text-xs text-slate-400 mt-1 uppercase tracking-wider font-medium">Câu đúng</p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+          <div className="flex items-center justify-center gap-3 pt-4">
             <button
-              onClick={handleRestartQuiz}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs font-semibold text-[#1F1F28] bg-[#FCFAF6] hover:bg-[#F3EFE6] border border-black/[0.06] transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              onClick={() => {
+                sound.playClick();
+                setCurrentIndex(0);
+                setAnswerHistory([]);
+                setIsCompleted(false);
+              }}
+              className="px-6 py-3 rounded-2xl bg-white/80 dark:bg-white/10 hover:bg-white text-slate-700 dark:text-slate-200 font-medium text-xs shadow-sm transition cursor-pointer flex items-center gap-2"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-[#5B2DFF]" />
-              <span>Làm lại bài này</span>
+              <RotateCcw className="w-4 h-4" />
+              <span>Luyện lại bộ này</span>
             </button>
 
             <button
-              onClick={onBack}
-              style={{
-                backgroundColor: '#5B2DFF',
-                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
+              onClick={() => {
+                sound.playClick();
+                onBack();
               }}
-              className="inline-flex items-center gap-2 px-7 py-3 rounded-full text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              className="px-6 py-3 rounded-2xl bg-[#007afc] text-white font-semibold text-xs shadow-md hover:bg-sky-600 transition cursor-pointer flex items-center gap-2"
             >
-              <span>Trở về bộ thẻ</span>
+              <span>Về danh sách</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
-
-        {/* Danh sách rà soát chi tiết từng câu */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-flow-serif text-xl font-normal text-[#1F1F28]">
-              Chi tiết câu trả lời
-            </h3>
-            <span className="text-xs text-[#8E8E93]">
-              {correctCount}/{total} câu đạt chuẩn
-            </span>
-          </div>
-
-          <div className="space-y-3">
-            {questions.map((q, idx) => {
-              const record = answerHistory.find(h => h.questionId === q.id);
-              const isOk = record?.isCorrect;
-              return (
-                <div
-                  key={q.id}
-                  style={{ boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)' }}
-                  className={`p-5 rounded-2xl border transition-all ${
-                    isOk
-                      ? 'bg-white border-black/[0.05]'
-                      : 'bg-rose-50/30 border-rose-200/70'
-                  }`}
-                >
-                  <div className="flex items-start gap-3.5">
-                    <div
-                      className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
-                        isOk ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-600'
-                      }`}
-                    >
-                      {isOk ? <Check className="w-4 h-4 stroke-[2.5]" /> : <AlertCircle className="w-4 h-4 stroke-[2.5]" />}
-                    </div>
-
-                    <div className="space-y-2 w-full text-left">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">
-                          Câu {idx + 1}
-                        </span>
-                        <span className={`text-[11px] font-semibold ${isOk ? 'text-emerald-700' : 'text-rose-600'}`}>
-                          {isOk ? 'Chính xác' : 'Chưa đúng'}
-                        </span>
-                      </div>
-
-                      <p className="text-sm font-medium text-[#1F1F28]">{q.prompt}</p>
-
-                      <div className="text-xs space-y-1 pt-1">
-                        <div>
-                          <span className="text-[#8E8E93]">Đáp án đúng: </span>
-                          <span className="font-semibold text-emerald-700">{q.correctAnswer}</span>
-                        </div>
-                        {!isOk && record && (
-                          <div>
-                            <span className="text-[#8E8E93]">Bạn đã chọn: </span>
-                            <span className="font-medium text-rose-600">{record.userSelection}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {q.explanation && (
-                        <div className="text-[11px] text-[#1F1F28] bg-[#FCFAF6] p-3 rounded-xl border border-black/[0.05] mt-2">
-                          <span className="font-semibold text-[#5B2DFF]">Giải thích: </span>
-                          {q.explanation}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
     );
   }
 
-  // MÀN HÌNH LÀM BÀI TRẮC NGHIỆM TỪNG CÂU (ACTIVE QUIZ SCREEN)
-  const letters = ['A', 'B', 'C', 'D'];
   const progressPct = Math.round(((currentIndex + 1) / total) * 100);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-in fade-in duration-200">
-      {/* Quiz Top Bar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 animate-in fade-in duration-300">
+      {/* 1. Header with Mode Controls & Spaced Filter */}
+      <div className="glass-card-sm rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
           <button
-            onClick={onBack}
-            style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-            className="p-2 text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 active:scale-95 cursor-pointer"
-            title="Dừng bài kiểm tra"
+            onClick={() => {
+              sound.playClick();
+              onBack();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10 transition cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4 text-[#5B2DFF]" />
+            <ArrowLeft className="w-4 h-4" />
+            <span>Thoát</span>
           </button>
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-medium text-[#8E8E93]">
-              <span className="uppercase tracking-wider">Trắc nghiệm phản hồi tức thì</span>
-              <span aria-hidden="true">&bull;</span>
-              <span className="text-[#1F1F28] font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
-            </div>
-            <h2 className="font-flow-serif text-lg sm:text-xl font-normal text-[#1F1F28]">
-              Câu {currentIndex + 1} <span className="text-[#8E8E93] font-sans text-sm">/ {total}</span>
+          <div className="h-4 w-px bg-slate-300/60 dark:bg-slate-700 hidden sm:block" />
+          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[200px]">
+            {studySet.title}
+          </div>
+        </div>
+
+        {/* Center: Spaced Repetition Tabs */}
+        <div className="flex items-center gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-xl text-xs">
+          <button
+            onClick={() => {
+              sound.playClick();
+              setFilterMode('all');
+              setCurrentIndex(0);
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+              filterMode === 'all'
+                ? 'bg-[#0a2540] dark:bg-sky-950 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Tất cả
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setFilterMode('mistaken');
+              setCurrentIndex(0);
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+              filterMode === 'mistaken'
+                ? 'bg-[#0a2540] dark:bg-sky-950 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Ôn câu sai
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setFilterMode('starred');
+              setCurrentIndex(0);
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+              filterMode === 'starred'
+                ? 'bg-[#0a2540] dark:bg-sky-950 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Đánh dấu sao
+          </button>
+        </div>
+
+        {/* Right: Shuffle & Shortcut Toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              sound.playClick();
+              setIsShuffleOn(prev => !prev);
+              setCurrentIndex(0);
+            }}
+            title={isShuffleOn ? 'Đang xáo trộn câu hỏi & đáp án' : 'Bật xáo trộn'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
+              isShuffleOn
+                ? 'bg-[#007afc] text-white shadow-sm'
+                : 'bg-white/60 dark:bg-white/5 text-slate-700 dark:text-slate-300 hover:bg-white/90'
+            }`}
+          >
+            <Shuffle className={`w-3.5 h-3.5 ${isShuffleOn ? 'rotate-180 transition-transform' : ''}`} />
+            <span>Xáo trộn</span>
+          </button>
+
+          <button
+            onClick={() => setShowShortcuts(prev => !prev)}
+            title="Xem phím tắt"
+            className="p-1.5 rounded-xl bg-white/60 dark:bg-white/5 text-slate-500 hover:text-slate-900 dark:hover:text-white transition"
+          >
+            <Keyboard className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Keyboard Shortcuts Hint */}
+      {showShortcuts && (
+        <div className="glass-card-sm rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300 grid grid-cols-2 sm:grid-cols-3 gap-2 animate-in fade-in">
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">1, 2, 3, 4</kbd> Chọn nhanh đáp án</div>
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">Enter / Space</kbd> Kiểm tra / Câu kế tiếp</div>
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">R</kbd> Xáo trộn đáp án</div>
+        </div>
+      )}
+
+      {/* 2. Progress Bar */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium px-1">
+          <span>Câu {currentIndex + 1} / {total}</span>
+          <span className="font-mono tabular-nums">{progressPct}%</span>
+        </div>
+        <div className="w-full bg-black/10 dark:bg-white/10 h-2 rounded-full overflow-hidden">
+          <div
+            className="bg-gradient-to-r from-[#007afc] to-indigo-500 h-full rounded-full transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 3. Quiz Card Stage */}
+      <div
+        className={`glass-card rounded-3xl p-6 sm:p-10 space-y-8 transition-transform duration-300 ${
+          shakeCard ? 'animate-shake' : ''
+        }`}
+      >
+        {/* Question Header & Speech */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-[#007afc]">
+              CÂU HỎI TRẮC NGHIỆM
+            </span>
+            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white leading-snug">
+              {currentQ.prompt}
             </h2>
           </div>
+          <button
+            onClick={() => speakText(currentQ.prompt)}
+            className="p-2.5 rounded-xl bg-white/70 dark:bg-white/10 text-slate-500 hover:text-sky-600 transition shrink-0"
+            title="Đọc câu hỏi"
+          >
+            <Volume2 className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Audio question speech */}
-        <button
-          onClick={() => speakText(currentQ.prompt)}
-          className="p-2 text-[#8E8E93] hover:text-[#5B2DFF] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 cursor-pointer"
-          title="Phát âm câu hỏi"
-        >
-          <Volume2 className="w-4 h-4" />
-        </button>
-      </div>
+        {/* 4. Rounded Option Bars (12px–16px border-radius, instant hover transitions, 1-4 keys) */}
+        <div className="space-y-3">
+          {currentOptions.map((opt, idx) => {
+            const isSelected = selectedOption === opt;
+            const isTargetCorrect = opt.trim().toLowerCase() === currentQ.correctAnswer.trim().toLowerCase();
 
-      {/* Progress Bar with Lilac Gradient */}
-      <div className="w-full bg-[#EDE8FF] h-1.5 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-300 ease-out"
-          style={{
-            width: `${progressPct}%`,
-            background: 'linear-gradient(90deg, #C8B4FF 0%, #5B2DFF 100%)',
-            boxShadow: '0 0 8px rgba(91, 45, 255, 0.4)'
-          }}
-        />
-      </div>
+            let optionStyle = 'bg-white/80 dark:bg-white/5 border-slate-200/80 dark:border-white/10 text-slate-800 dark:text-slate-200 hover:bg-white hover:border-[#007afc]/40';
 
-      {/* Main Question Card (Lilac Flow Neumorphic Light) */}
-      <div
-        style={{
-          boxShadow: '0 16px 36px rgba(91, 45, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.02)',
-        }}
-        className="bg-white rounded-3xl p-6 sm:p-9 border border-black/[0.05] space-y-6"
-      >
-        <div>
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-semibold bg-[#EDE8FF] text-[#5B2DFF] border border-[#5B2DFF]/15 mb-3 uppercase tracking-wider">
-            <Sparkles className="w-3 h-3" />
-            {currentQ.type === 'multiple_choice' && 'Trắc nghiệm 4 đáp án'}
-            {currentQ.type === 'fill_blank' && 'Điền từ vào chỗ trống'}
-            {currentQ.type === 'matching' && 'Nối các khái niệm tương ứng'}
-            {currentQ.type === 'ordering' && 'Sắp xếp đúng trình tự'}
-          </span>
-
-          <h3 className="font-flow-serif text-2xl sm:text-3xl font-normal text-[#1F1F28] leading-[1.3]">
-            {currentQ.prompt}
-          </h3>
-        </div>
-
-        {/* 1. DẠNG TRẮC NGHIỆM 4 ĐÁP ÁN */}
-        {currentQ.type === 'multiple_choice' && currentQ.options && (
-          <div className="grid grid-cols-1 gap-3 pt-2">
-            {currentQ.options.map((opt, idx) => {
-              const isSelected = selectedOption === opt;
-              const isCorrectAnswer = opt.trim().toLowerCase() === currentQ.correctAnswer.trim().toLowerCase();
-
-              // Styling sau khi đã chọn
-              let buttonBg = 'bg-[#FCFAF6] hover:bg-[#F4EFFE] hover:border-[#5B2DFF]/40 border-black/[0.06] text-[#1F1F28]';
-              let badgeBg = 'bg-white text-[#8E8E93] border border-black/[0.06]';
-
-              if (isAnswered) {
-                if (isCorrectAnswer) {
-                  buttonBg = 'bg-emerald-50/80 border-emerald-400 text-emerald-950 font-semibold shadow-[0_4px_12px_rgba(16,185,129,0.15)]';
-                  badgeBg = 'bg-emerald-600 text-white border-transparent';
-                } else if (isSelected && !isCorrectAnswer) {
-                  buttonBg = 'bg-rose-50/80 border-rose-300 text-rose-950 font-medium shadow-[0_4px_12px_rgba(244,63,94,0.15)]';
-                  badgeBg = 'bg-rose-600 text-white border-transparent';
-                } else {
-                  buttonBg = 'bg-[#FCFAF6]/60 border-black/[0.04] text-[#8E8E93] opacity-60';
-                }
+            if (isAnswered) {
+              if (isTargetCorrect) {
+                optionStyle = 'bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-200 font-semibold shadow-xs';
+              } else if (isSelected && !isCurrentCorrect) {
+                optionStyle = 'bg-rose-500/15 border-rose-500 text-rose-900 dark:text-rose-200 font-semibold';
+              } else {
+                optionStyle = 'opacity-40 bg-white/30 dark:bg-white/[0.02] border-transparent text-slate-400';
               }
+            } else if (isSelected) {
+              optionStyle = 'bg-[#007afc]/10 border-[#007afc] text-[#007afc] font-semibold ring-2 ring-[#007afc]/20 shadow-xs';
+            }
 
-              return (
-                <button
-                  key={idx}
-                  type="button"
-                  disabled={isAnswered}
-                  onClick={() => handleSelectOption(opt)}
-                  style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-                  className={`w-full p-4 rounded-2xl border text-left text-xs sm:text-sm transition-all duration-200 flex items-center justify-between gap-4 cursor-pointer ${buttonBg}`}
-                >
-                  <div className="flex items-center gap-3.5">
-                    <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${badgeBg}`}>
-                      {letters[idx] || idx + 1}
-                    </span>
-                    <span className="leading-snug">{opt}</span>
-                  </div>
-
-                  {isAnswered && isCorrectAnswer && (
-                    <span className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0">
-                      <Check className="w-3.5 h-3.5 stroke-[3]" />
-                    </span>
-                  )}
-                  {isAnswered && isSelected && !isCorrectAnswer && (
-                    <span className="w-6 h-6 rounded-full bg-rose-600 text-white flex items-center justify-center shrink-0">
-                      <AlertCircle className="w-3.5 h-3.5 stroke-[3]" />
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 2. DẠNG ĐIỀN TỪ VÀO CHỖ TRỐNG */}
-        {currentQ.type === 'fill_blank' && (
-          <form onSubmit={handleSubmitFill} className="space-y-4 pt-2">
-            <div className="relative">
-              <input
-                type="text"
-                disabled={isAnswered}
-                value={fillInput}
-                onChange={(e) => setFillInput(e.target.value)}
-                placeholder="Nhập câu trả lời của bạn..."
-                className="w-full px-5 py-3.5 rounded-full border border-black/[0.08] bg-[#FCFAF6] text-xs sm:text-sm text-[#1F1F28] placeholder-[#8E8E93] focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20 transition-all"
-              />
-            </div>
-
-            {!isAnswered && (
+            return (
               <button
-                type="submit"
-                disabled={!fillInput.trim()}
-                style={{
-                  backgroundColor: '#5B2DFF',
-                  boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-                }}
-                className="px-6 py-3 rounded-full text-xs font-semibold text-white disabled:opacity-50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              >
-                Kiểm tra kết quả
-              </button>
-            )}
-          </form>
-        )}
-
-        {/* 3. DẠNG NỐI KHÁI NIỆM */}
-        {currentQ.type === 'matching' && currentQ.matchingPairs && (
-          <div className="space-y-4 pt-2">
-            <p className="text-xs text-[#8E8E93]">
-              Chạm chọn thuật ngữ cột trái, sau đó chạm định nghĩa tương ứng cột phải để ghép cặp:
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <div className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">Cột Thuật ngữ</div>
-                {matchingPairsLeft.map(item => {
-                  const isLeftChosen = selectedLeft === item.id;
-                  const isPaired = !!pairedMatches[item.id];
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      disabled={isAnswered}
-                      onClick={() => handleLeftClick(item.id)}
-                      className={`w-full p-3.5 rounded-2xl border text-left text-xs transition-all cursor-pointer ${
-                        isLeftChosen
-                          ? 'border-[#5B2DFF] bg-[#EDE8FF] text-[#5B2DFF] font-semibold shadow-[0_4px_12px_rgba(91,45,255,0.2)]'
-                          : isPaired
-                          ? 'border-emerald-300 bg-emerald-50/70 text-emerald-900 font-medium'
-                          : 'border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-[#1F1F28]'
-                      }`}
-                    >
-                      {item.text}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="space-y-2">
-                <div className="text-[10px] font-bold text-[#8E8E93] uppercase tracking-wider">Cột Định nghĩa</div>
-                {matchingPairsRight.map(item => {
-                  const pairedLeftId = Object.keys(pairedMatches).find(k => pairedMatches[k] === item.id);
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      disabled={isAnswered || !selectedLeft}
-                      onClick={() => handleRightClick(item.id)}
-                      className={`w-full p-3.5 rounded-2xl border text-left text-xs transition-all cursor-pointer ${
-                        pairedLeftId
-                          ? 'border-emerald-300 bg-emerald-50/70 text-emerald-900 font-medium'
-                          : selectedLeft
-                          ? 'border-[#5B2DFF]/40 bg-[#EDE8FF]/30 hover:bg-[#EDE8FF] text-[#1F1F28]'
-                          : 'border-black/[0.06] bg-[#FCFAF6] text-[#8E8E93]'
-                      }`}
-                    >
-                      {item.text}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {!isAnswered && (
-              <button
+                key={idx}
                 type="button"
-                onClick={handleSubmitMatching}
-                disabled={Object.keys(pairedMatches).length < currentQ.matchingPairs.length}
-                style={{
-                  backgroundColor: '#5B2DFF',
-                  boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-                }}
-                className="px-6 py-3 rounded-full text-xs font-semibold text-white disabled:opacity-50 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                onClick={() => handlePickOption(opt)}
+                disabled={isAnswered}
+                className={`w-full p-4 rounded-2xl border text-left text-sm transition-all duration-150 flex items-center justify-between gap-4 cursor-pointer select-none ${optionStyle}`}
               >
-                Xác nhận ghép đôi ({Object.keys(pairedMatches).length}/{currentQ.matchingPairs.length})
-              </button>
-            )}
-          </div>
-        )}
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-7 h-7 rounded-xl bg-black/5 dark:bg-white/10 text-xs font-mono font-bold flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="leading-snug break-words">{opt}</span>
+                </div>
 
-        {/* 4. DẠNG SẮP XẾP THỨ TỰ */}
-        {currentQ.type === 'ordering' && currentQ.orderingItems && (
-          <div className="space-y-4 pt-2">
-            <p className="text-xs text-[#8E8E93]">
-              Dùng mũi tên để di chuyển các bước theo thứ tự hợp lý:
-            </p>
-
-            <div className="space-y-2">
-              {currentOrder.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3.5 bg-[#FCFAF6] border border-black/[0.06] rounded-2xl text-xs font-medium"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-full bg-[#EDE8FF] text-[#5B2DFF] font-bold flex items-center justify-center shrink-0">
-                      {idx + 1}
-                    </span>
-                    <span className="text-[#1F1F28]">{item}</span>
-                  </div>
-
-                  {!isAnswered && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        disabled={idx === 0}
-                        onClick={() => handleMoveOrderItem(idx, 'up')}
-                        className="p-1.5 text-[#8E8E93] hover:text-[#1F1F28] disabled:opacity-30 rounded-full hover:bg-black/5"
-                      >
-                        <MoveUp className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={idx === currentOrder.length - 1}
-                        onClick={() => handleMoveOrderItem(idx, 'down')}
-                        className="p-1.5 text-[#8E8E93] hover:text-[#1F1F28] disabled:opacity-30 rounded-full hover:bg-black/5"
-                      >
-                        <MoveDown className="w-3.5 h-3.5" />
-                      </button>
+                <div className="shrink-0">
+                  {isAnswered && isTargetCorrect && (
+                    <div className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center">
+                      <Check className="w-4 h-4 stroke-[3]" />
+                    </div>
+                  )}
+                  {isAnswered && isSelected && !isTargetCorrect && (
+                    <div className="w-6 h-6 rounded-full bg-rose-500 text-white flex items-center justify-center">
+                      <X className="w-4 h-4 stroke-[3]" />
                     </div>
                   )}
                 </div>
-              ))}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 5. Answer Feedback & Explanation Drawer */}
+        {isAnswered && (
+          <div className="p-5 rounded-2xl bg-white/90 dark:bg-black/40 border border-slate-200/80 dark:border-white/10 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 font-bold text-sm">
+              {isCurrentCorrect ? (
+                <>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                  <span className="text-emerald-700 dark:text-emerald-400">Chính xác! Làm rất tốt.</span>
+                </>
+              ) : (
+                <>
+                  <AlertCircle className="w-5 h-5 text-rose-500" />
+                  <span className="text-rose-700 dark:text-rose-400">
+                    Chưa chính xác. Đáp án đúng là: <strong>{currentQ.correctAnswer}</strong>
+                  </span>
+                </>
+              )}
             </div>
 
-            {!isAnswered && (
-              <button
-                type="button"
-                onClick={handleSubmitOrdering}
-                style={{
-                  backgroundColor: '#5B2DFF',
-                  boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-                }}
-                className="px-6 py-3 rounded-full text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              >
-                Xác nhận thứ tự
-              </button>
+            {currentQ.explanation && (
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                {currentQ.explanation}
+              </p>
+            )}
+
+            {currentQ.memoryTip && (
+              <div className="text-xs text-purple-600 dark:text-purple-400 font-medium">
+                💡 Mẹo ghi nhớ: {currentQ.memoryTip}
+              </div>
             )}
           </div>
         )}
-      </div>
 
-      {/* FEEDBACK LOOP CARD TỨC THÌ SAU MỖI CÂU HỎI (Lilac Flow High-End Card) */}
-      {isAnswered && (
-        <div
-          style={{
-            boxShadow: '0 16px 36px rgba(91, 45, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.02)',
-          }}
-          className={`rounded-3xl p-6 sm:p-8 border transition-all animate-in fade-in slide-in-from-bottom-3 duration-300 space-y-5 ${
-            isCurrentCorrect
-              ? 'bg-gradient-to-br from-emerald-50/90 to-white border-emerald-300/80'
-              : 'bg-gradient-to-br from-rose-50/90 to-white border-rose-300/80'
-          }`}
-        >
-          {/* Header kết quả */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-white ${
-                  isCurrentCorrect
-                    ? 'bg-emerald-600 shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
-                    : 'bg-rose-600 shadow-[0_4px_14px_rgba(244,63,94,0.35)]'
-                }`}
-              >
-                {isCurrentCorrect ? <Check className="w-5 h-5 stroke-[3]" /> : <AlertCircle className="w-5 h-5 stroke-[3]" />}
-              </div>
-              <div>
-                <h4 className="font-flow-serif text-lg sm:text-xl font-normal text-[#1F1F28]">
-                  {isCurrentCorrect ? 'Chính xác! Làm rất tốt!' : 'Chưa chính xác'}
-                </h4>
-                <p className="text-[11px] text-[#8E8E93]">
-                  {isCurrentCorrect ? 'Bạn đã ghi nhớ đúng kiến thức này.' : 'Hãy xem giải thích chi tiết bên dưới để nhớ lâu hơn.'}
-                </p>
-              </div>
-            </div>
-
-            {/* Nút sang câu tiếp theo (Pill Button nổi bật) */}
+        {/* 6. Prominent Action Controls: "CHECK" and "NEXT" styled with vibrant bright cyan/blue (#007afc) */}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200/60 dark:border-white/10">
+          {!isAnswered ? (
+            <button
+              onClick={handleCheckAnswer}
+              disabled={selectedOption === null}
+              className={`px-8 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all duration-200 shadow-md flex items-center gap-2 cursor-pointer ${
+                selectedOption !== null
+                  ? 'bg-[#007afc] text-white hover:bg-sky-600 hover:scale-102 active:scale-98 shadow-sky-500/30'
+                  : 'bg-slate-200 dark:bg-white/10 text-slate-400 cursor-not-allowed'
+              }`}
+            >
+              <span>KIỂM TRA (CHECK)</span>
+              <Check className="w-4 h-4" />
+            </button>
+          ) : (
             <button
               onClick={handleNextQuestion}
-              style={{
-                backgroundColor: '#5B2DFF',
-                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-              }}
-              className="group px-6 py-3 rounded-full text-xs font-semibold text-white inline-flex items-center gap-2 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0"
+              className="px-8 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-wider bg-[#007afc] text-white hover:bg-sky-600 hover:scale-102 active:scale-98 shadow-md shadow-sky-500/30 flex items-center gap-2 cursor-pointer transition-all duration-200"
             >
-              <span>{currentIndex + 1 < total ? 'Câu tiếp theo' : 'Xem kết quả bài thi'}</span>
-              <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+              <span>{currentIndex + 1 < total ? 'CÂU KẾ TIẾP (NEXT)' : 'XEM KẾT QUẢ'}</span>
+              <ArrowRight className="w-4 h-4" />
             </button>
-          </div>
-
-          {/* Đáp án chuẩn */}
-          <div className="p-4 rounded-2xl bg-white/90 border border-black/[0.05] space-y-1">
-            <p className="text-[10px] uppercase tracking-wider font-bold text-[#8E8E93]">Đáp án chuẩn xác</p>
-            <p className="font-flow-serif text-base font-medium text-[#5B2DFF]">{currentQ.correctAnswer}</p>
-          </div>
-
-          {/* Giải thích chi tiết */}
-          {currentQ.explanation && (
-            <div className="p-4 rounded-2xl bg-white/90 border border-black/[0.05] space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#5B2DFF] uppercase tracking-wider">
-                <HelpCircle className="w-3.5 h-3.5" />
-                <span>Giải thích vì sao:</span>
-              </div>
-              <p className="text-xs text-[#1F1F28] leading-relaxed">
-                {currentQ.explanation}
-              </p>
-            </div>
           )}
-
-          {/* Mẹo ghi nhớ & Ví dụ */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            {currentQ.memoryTip && (
-              <div className="p-3.5 rounded-2xl bg-[#EDE8FF]/50 border border-[#C8B4FF]/40 space-y-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#5B2DFF]">
-                  <Lightbulb className="w-3.5 h-3.5" />
-                  <span>Mẹo nhớ nhanh:</span>
-                </div>
-                <p className="text-[11px] text-[#1F1F28] leading-relaxed">
-                  {currentQ.memoryTip}
-                </p>
-              </div>
-            )}
-
-            {currentQ.example && (
-              <div className="p-3.5 rounded-2xl bg-white/90 border border-black/[0.05] space-y-1">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#8E8E93]">
-                  <BookOpen className="w-3.5 h-3.5 text-[#5B2DFF]" />
-                  <span>Ví dụ thực tế:</span>
-                </div>
-                <p className="text-[11px] text-[#8E8E93] italic leading-relaxed">
-                  "{currentQ.example}"
-                </p>
-              </div>
-            )}
-          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

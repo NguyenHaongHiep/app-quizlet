@@ -8,13 +8,16 @@ import {
   Volume2,
   Star,
   CheckCircle2,
-  HelpCircle,
   Lightbulb,
   BookOpen,
-  Sparkles
+  Sparkles,
+  HelpCircle,
+  Keyboard,
+  Filter
 } from 'lucide-react';
 import { StudySet, Question } from '../types';
 import { speakText } from '../lib/speech';
+import { sound } from '../lib/sound';
 
 interface FlashcardModeProps {
   studySet: StudySet;
@@ -23,103 +26,149 @@ interface FlashcardModeProps {
   onToggleMaster: (questionId: string) => void;
 }
 
+type SpacedFilter = 'all' | 'starred' | 'mastered' | 'mistaken';
+
 export const FlashcardMode: React.FC<FlashcardModeProps> = ({
   studySet,
   onBack,
   onToggleStar,
   onToggleMaster
 }) => {
-  const [questions, setQuestions] = useState<Question[]>(() => [...studySet.questions]);
+  const [cards, setCards] = useState<Question[]>(() => [...studySet.questions]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [filterStarredOnly, setFilterStarredOnly] = useState(false);
+  const [isAutoShuffle, setIsAutoShuffle] = useState(false);
+  const [filterMode, setFilterMode] = useState<SpacedFilter>('all');
+  const [showShortcuts, setShowShortcuts] = useState(false);
 
-  // Đồng bộ danh sách câu hỏi khi bộ thẻ hoặc danh sách câu hỏi thay đổi
+  // Sync cards when studySet questions change
   useEffect(() => {
-    setQuestions([...studySet.questions]);
+    setCards([...studySet.questions]);
     setCurrentIndex(0);
     setIsFlipped(false);
   }, [studySet.id, studySet.questions]);
 
-  // Lọc theo câu hỏi đánh dấu sao nếu người dùng bật
-  const activeQuestions = filterStarredOnly
-    ? questions.filter(q => q.starred)
-    : questions;
+  // Robust Fisher-Yates Shuffle Algorithm
+  const shuffleCards = useCallback((arr: Question[]) => {
+    const copy = [...arr];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }, []);
 
-  const currentQ = activeQuestions[currentIndex] || activeQuestions[0];
-  const total = activeQuestions.length;
+  // Filter cards based on Spaced Repetition selector
+  const activeCards = React.useMemo(() => {
+    let result = cards;
+    if (filterMode === 'starred') {
+      result = cards.filter(c => c.starred);
+    } else if (filterMode === 'mastered') {
+      result = cards.filter(c => c.mastered);
+    } else if (filterMode === 'mistaken') {
+      result = cards.filter(c => c.lastAnsweredCorrect === false);
+    }
+    return result;
+  }, [cards, filterMode]);
+
+  const currentQ = activeCards[currentIndex] || activeCards[0];
+  const total = activeCards.length;
+
+  const handleFlip = useCallback(() => {
+    sound.playFlip();
+    setIsFlipped(prev => !prev);
+  }, []);
 
   const handleNext = useCallback(() => {
     if (total === 0) return;
+    sound.playClick();
     setIsFlipped(false);
     setCurrentIndex(prev => (prev + 1) % total);
   }, [total]);
 
   const handlePrev = useCallback(() => {
     if (total === 0) return;
+    sound.playClick();
     setIsFlipped(false);
     setCurrentIndex(prev => (prev - 1 + total) % total);
   }, [total]);
 
-  const handleFlip = useCallback(() => {
-    setIsFlipped(prev => !prev);
-  }, []);
-
-  const handleShuffle = () => {
-    setIsFlipped(false);
-    const shuffled = [...questions].sort(() => 0.5 - Math.random());
-    setQuestions(shuffled);
-    setCurrentIndex(0);
+  const handleToggleShuffle = () => {
+    sound.playClick();
+    if (!isAutoShuffle) {
+      setCards(prev => shuffleCards(prev));
+      setCurrentIndex(0);
+      setIsFlipped(false);
+    } else {
+      // Revert to original order
+      setCards([...studySet.questions]);
+      setCurrentIndex(0);
+      setIsFlipped(false);
+    }
+    setIsAutoShuffle(prev => !prev);
   };
 
-  // Hỗ trợ phím tắt bàn phím tiện lợi
+  // Keyboard navigation shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
         return;
       }
+
       if (e.code === 'Space') {
         e.preventDefault();
         handleFlip();
       } else if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+        e.preventDefault();
         handleNext();
       } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+        e.preventDefault();
         handlePrev();
       } else if (e.code === 'KeyS' && currentQ) {
+        e.preventDefault();
+        sound.playClick();
         onToggleStar(currentQ.id);
       } else if (e.code === 'KeyM' && currentQ) {
+        e.preventDefault();
+        sound.playClick();
         onToggleMaster(currentQ.id);
+      } else if (e.code === 'KeyR') {
+        e.preventDefault();
+        handleToggleShuffle();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleFlip, handleNext, handlePrev, currentQ, onToggleStar, onToggleMaster]);
+  }, [handleFlip, handleNext, handlePrev, currentQ, onToggleStar, onToggleMaster, isAutoShuffle]);
 
   if (total === 0) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
-        <div className="w-16 h-16 mx-auto rounded-full bg-[#EDE8FF] text-[#5B2DFF] flex items-center justify-center">
-          <BookOpen className="w-8 h-8 stroke-[2]" />
+        <div className="w-16 h-16 mx-auto rounded-3xl bg-white/70 dark:bg-white/5 border border-white/40 flex items-center justify-center text-sky-600 shadow-sm">
+          <BookOpen className="w-8 h-8" />
         </div>
-        <h3 className="font-flow-serif text-2xl font-normal text-[#1F1F28]">Không có thẻ nào phù hợp</h3>
-        <p className="text-xs text-[#8E8E93] max-w-sm mx-auto">
-          {filterStarredOnly
-            ? 'Bạn chưa đánh dấu sao cho câu hỏi nào trong bộ thẻ này.'
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Không có thẻ nào phù hợp</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+          {filterMode !== 'all'
+            ? 'Không tìm thấy thẻ nào theo bộ lọc hiện tại. Hãy chuyển sang xem toàn bộ thẻ.'
             : 'Bộ thẻ hiện chưa có câu hỏi nào. Hãy thêm câu hỏi mới hoặc nhập file Excel.'}
         </p>
         <div className="flex justify-center gap-3 pt-2">
-          {filterStarredOnly && (
+          {filterMode !== 'all' && (
             <button
-              onClick={() => setFilterStarredOnly(false)}
-              className="px-5 py-2.5 rounded-full text-xs font-semibold text-white bg-[#5B2DFF] shadow-[0_8px_20px_rgba(91,45,255,0.35)] hover:scale-105 active:scale-95 transition-all cursor-pointer"
+              onClick={() => {
+                sound.playClick();
+                setFilterMode('all');
+              }}
+              className="px-5 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 transition cursor-pointer shadow-sm"
             >
-              Xem tất cả thẻ
+              Xem tất cả ({studySet.questions.length} thẻ)
             </button>
           )}
           <button
             onClick={onBack}
-            className="px-5 py-2.5 rounded-full text-xs font-medium text-[#1F1F28] bg-white border border-black/[0.06] hover:bg-[#F3EFE6] transition-all cursor-pointer"
+            className="px-5 py-2.5 rounded-xl text-xs font-medium text-slate-700 dark:text-slate-300 bg-white/70 dark:bg-white/10 hover:bg-white transition cursor-pointer"
           >
             Quay lại
           </button>
@@ -128,287 +177,259 @@ export const FlashcardMode: React.FC<FlashcardModeProps> = ({
     );
   }
 
-  const progressPercent = Math.round(((currentIndex + 1) / total) * 100);
+  const progressPct = Math.round(((currentIndex + 1) / total) * 100);
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-in fade-in duration-200">
-      {/* Header bar */}
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+    <div className="max-w-4xl mx-auto px-4 py-6 space-y-6 animate-in fade-in duration-300">
+      {/* 1. Header Bar with Back, Progress and Controls */}
+      <div className="glass-card-sm rounded-2xl px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-start">
           <button
-            onClick={onBack}
-            style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-            className="p-2 text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 active:scale-95 cursor-pointer"
-            title="Quay lại bộ thẻ"
+            onClick={() => {
+              sound.playClick();
+              onBack();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10 transition cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4 text-[#5B2DFF]" />
+            <ArrowLeft className="w-4 h-4" />
+            <span>Thoát</span>
           </button>
-          <div>
-            <div className="flex items-center gap-2 text-[11px] font-medium text-[#8E8E93]">
-              <span className="uppercase tracking-wider">Flashcard 3D</span>
-              <span aria-hidden="true">&bull;</span>
-              <span className="text-[#1F1F28] font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
-            </div>
-            <h2 className="font-flow-serif text-lg sm:text-xl font-normal text-[#1F1F28]">
-              Thẻ {currentIndex + 1} <span className="text-[#8E8E93] font-sans text-sm">/ {total}</span>
-            </h2>
+          <div className="h-4 w-px bg-slate-300/60 dark:bg-slate-700 hidden sm:block" />
+          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[200px]">
+            {studySet.title}
           </div>
         </div>
 
-        {/* Filter & Controls */}
-        <div className="flex items-center gap-2">
+        {/* Center: Spaced Repetition Tabs */}
+        <div className="flex items-center gap-1 p-1 bg-black/5 dark:bg-white/5 rounded-xl text-xs">
           <button
-            onClick={() => setFilterStarredOnly(!filterStarredOnly)}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all cursor-pointer ${
-              filterStarredOnly
-                ? 'bg-[#5B2DFF] text-white shadow-[0_4px_14px_rgba(91,45,255,0.35)]'
-                : 'text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] hover:bg-[#F3EFE6]'
+            onClick={() => {
+              sound.playClick();
+              setFilterMode('all');
+              setCurrentIndex(0);
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+              filterMode === 'all'
+                ? 'bg-[#0a2540] dark:bg-sky-950 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
             }`}
           >
-            <Star className={`w-3.5 h-3.5 ${filterStarredOnly ? 'fill-white text-white' : ''}`} />
-            <span className="hidden sm:inline">Chỉ câu đánh dấu</span>
+            Tất cả ({cards.length})
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setFilterMode('starred');
+              setCurrentIndex(0);
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+              filterMode === 'starred'
+                ? 'bg-[#0a2540] dark:bg-sky-950 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Đánh dấu ({cards.filter(c => c.starred).length})
+          </button>
+          <button
+            onClick={() => {
+              sound.playClick();
+              setFilterMode('mistaken');
+              setCurrentIndex(0);
+            }}
+            className={`px-3 py-1 rounded-lg font-medium transition cursor-pointer ${
+              filterMode === 'mistaken'
+                ? 'bg-[#0a2540] dark:bg-sky-950 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+            }`}
+          >
+            Câu sai ({cards.filter(c => c.lastAnsweredCorrect === false).length})
+          </button>
+        </div>
+
+        {/* Right: Auto-Shuffle Toggle & Shortcut Help */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleToggleShuffle}
+            title={isAutoShuffle ? 'Đang xáo trộn thẻ (Bấm để hoàn tác)' : 'Bật tự động xáo trộn thẻ'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition cursor-pointer ${
+              isAutoShuffle
+                ? 'bg-[#007afc] text-white shadow-sm'
+                : 'bg-white/60 dark:bg-white/5 text-slate-700 dark:text-slate-300 hover:bg-white/90'
+            }`}
+          >
+            <Shuffle className={`w-3.5 h-3.5 ${isAutoShuffle ? 'rotate-180 transition-transform' : ''}`} />
+            <span>Xáo trộn</span>
           </button>
 
           <button
-            onClick={handleShuffle}
-            title="Xáo trộn thứ tự thẻ"
-            className="p-2 text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] rounded-full hover:bg-[#F3EFE6] transition-all cursor-pointer"
+            onClick={() => setShowShortcuts(prev => !prev)}
+            title="Xem phím tắt bàn phím"
+            className="p-1.5 rounded-xl bg-white/60 dark:bg-white/5 text-slate-500 hover:text-slate-900 dark:hover:text-white transition"
           >
-            <Shuffle className="w-4 h-4" />
+            <Keyboard className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* Progress Bar with Lilac Gradient */}
-      <div className="w-full bg-[#EDE8FF] h-1.5 rounded-full overflow-hidden">
-        <div
-          className="h-full rounded-full transition-all duration-300 ease-out"
-          style={{
-            width: `${progressPercent}%`,
-            background: 'linear-gradient(90deg, #C8B4FF 0%, #5B2DFF 100%)',
-            boxShadow: '0 0 8px rgba(91, 45, 255, 0.4)'
-          }}
-        />
+      {/* Keyboard Shortcuts Helper Drawer */}
+      {showShortcuts && (
+        <div className="glass-card-sm rounded-2xl p-4 text-xs text-slate-700 dark:text-slate-300 grid grid-cols-2 sm:grid-cols-4 gap-2 animate-in fade-in">
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">Space</kbd> Lật thẻ</div>
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">&larr; / &rarr;</kbd> Thẻ trước / sau</div>
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">S</kbd> Đánh dấu sao</div>
+          <div><kbd className="px-1.5 py-0.5 bg-white dark:bg-slate-800 rounded border text-[10px] font-mono">M</kbd> Đã thành thạo</div>
+        </div>
+      )}
+
+      {/* 2. Progress Bar */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400 font-medium px-1">
+          <span>Thẻ {currentIndex + 1} / {total}</span>
+          <span className="font-mono tabular-nums">{progressPct}%</span>
+        </div>
+        <div className="w-full bg-black/10 dark:bg-white/10 h-2 rounded-full overflow-hidden">
+          <div
+            className="bg-gradient-to-r from-[#007afc] to-indigo-500 h-full rounded-full transition-all duration-300"
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
       </div>
 
-      {/* Main Flashcard with 3D Flip (Lilac Flow Styling) */}
-      <div className="perspective-1000 min-h-[380px] sm:min-h-[440px] w-full">
+      {/* 3. Center: Large Study Card (24px radius, pure white #ffffff background, soft depth shadow) */}
+      <div className="perspective-1000 min-h-[420px] w-full flex items-center justify-center">
         <div
           onClick={handleFlip}
-          style={{
-            boxShadow: '0 16px 40px rgba(91, 45, 255, 0.06), 0 2px 8px rgba(0, 0, 0, 0.02)',
-          }}
-          className={`relative w-full h-full min-h-[380px] sm:min-h-[440px] rounded-3xl cursor-pointer transition-transform duration-500 transform-style-3d select-none border border-black/[0.05] bg-white ${
-            isFlipped ? 'rotate-y-180' : ''
+          className={`study-card-hero relative w-full min-h-[400px] cursor-pointer bg-white dark:bg-[#1a1738] p-8 sm:p-12 flex flex-col justify-between transition-all duration-300 select-none border border-slate-200/80 dark:border-white/10 hover:shadow-2xl ${
+            isFlipped ? 'ring-2 ring-[#007afc]/30' : ''
           }`}
         >
-          {/* MẶT TRƯỚC (FRONT) */}
-          <div className="absolute inset-0 p-6 sm:p-10 flex flex-col justify-between backface-hidden rounded-3xl bg-white">
-            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#EDE8FF] text-[#5B2DFF] border border-[#5B2DFF]/15">
-                <Sparkles className="w-3 h-3" /> Thuật ngữ / Câu hỏi
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    speakText(currentQ.prompt);
-                  }}
-                  className="w-8 h-8 rounded-full bg-[#FCFAF6] hover:bg-[#EDE8FF] text-[#8E8E93] hover:text-[#5B2DFF] flex items-center justify-center transition-colors cursor-pointer"
-                  title="Phát âm (Phím A)"
-                >
-                  <Volume2 className="w-4 h-4" />
-                </button>
+          {/* Card Top Strip: Star, Master, Audio & Flip Hint */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sound.playClick();
+                  onToggleStar(currentQ.id);
+                }}
+                className={`p-2 rounded-xl transition ${
+                  currentQ.starred
+                    ? 'text-amber-500 bg-amber-50 dark:bg-amber-950/40'
+                    : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-white/5'
+                }`}
+                title="Đánh dấu sao câu hỏi quan trọng"
+              >
+                <Star className={`w-5 h-5 ${currentQ.starred ? 'fill-amber-500' : ''}`} />
+              </button>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleStar(currentQ.id);
-                  }}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all cursor-pointer ${
-                    currentQ.starred
-                      ? 'bg-amber-50 text-amber-500 shadow-xs'
-                      : 'bg-[#FCFAF6] hover:bg-amber-50 text-[#8E8E93] hover:text-amber-500'
-                  }`}
-                  title="Đánh dấu câu khó (Phím S)"
-                >
-                  <Star className={`w-4 h-4 ${currentQ.starred ? 'fill-amber-500' : ''}`} />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  sound.playClick();
+                  onToggleMaster(currentQ.id);
+                }}
+                className={`p-2 rounded-xl transition ${
+                  currentQ.mastered
+                    ? 'text-emerald-500 bg-emerald-50 dark:bg-emerald-950/40'
+                    : 'text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-white/5'
+                }`}
+                title="Đánh dấu đã ghi nhớ / thành thạo"
+              >
+                <CheckCircle2 className={`w-5 h-5 ${currentQ.mastered ? 'fill-emerald-500' : ''}`} />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  speakText(isFlipped ? currentQ.correctAnswer : currentQ.prompt);
+                }}
+                className="p-2 rounded-xl text-slate-400 hover:text-sky-600 hover:bg-slate-100 dark:hover:bg-white/5 transition"
+                title="Nghe phát âm chuẩn (Text-to-Speech)"
+              >
+                <Volume2 className="w-5 h-5" />
+              </button>
             </div>
 
-            {/* Prompt Content */}
-            <div className="my-auto py-6 text-center space-y-4">
-              <h3 className="font-flow-serif text-2xl sm:text-3xl md:text-4xl font-normal text-[#1F1F28] leading-[1.3] max-w-2xl mx-auto">
-                {currentQ.prompt}
-              </h3>
-
-              {currentQ.options && currentQ.options.length > 0 && (
-                <div className="pt-2 flex flex-wrap justify-center gap-2 max-w-xl mx-auto">
-                  {currentQ.options.map((opt, i) => (
-                    <span
-                      key={i}
-                      className="px-3.5 py-1.5 bg-[#FCFAF6] border border-black/[0.05] rounded-full text-xs text-[#1F1F28] font-medium"
-                    >
-                      <span className="text-[#5B2DFF] font-semibold mr-1">{String.fromCharCode(65 + i)}.</span> {opt}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Hint to flip */}
-            <div className="flex items-center justify-center gap-2 text-xs text-[#8E8E93] font-medium">
-              <RotateCw className="w-3.5 h-3.5 text-[#5B2DFF]" />
-              <span>Chạm thẻ hoặc nhấn phím cách để lật đáp án</span>
+            <div className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300">
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>{isFlipped ? 'Mặt sau: Đáp án' : 'Mặt trước: Câu hỏi'}</span>
             </div>
           </div>
 
-          {/* MẶT SAU (BACK) */}
-          <div className="absolute inset-0 p-6 sm:p-10 flex flex-col justify-between backface-hidden rotate-y-180 rounded-3xl bg-gradient-to-b from-[#FCFAF6] to-white border border-[#C8B4FF]/30">
-            <div className="flex items-center justify-between text-xs text-[#8E8E93]">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <CheckCircle2 className="w-3 h-3" /> Đáp án chuẩn xác
-              </span>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    speakText(currentQ.correctAnswer);
-                  }}
-                  className="w-8 h-8 rounded-full bg-white hover:bg-[#EDE8FF] text-[#8E8E93] hover:text-[#5B2DFF] flex items-center justify-center transition-colors cursor-pointer border border-black/[0.05]"
-                  title="Phát âm đáp án"
-                >
-                  <Volume2 className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggleMaster(currentQ.id);
-                  }}
-                  className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                    currentQ.mastered
-                      ? 'bg-[#5B2DFF] text-white shadow-[0_4px_14px_rgba(91,45,255,0.35)]'
-                      : 'bg-white hover:bg-emerald-50 text-[#8E8E93] hover:text-emerald-700 border border-black/[0.06]'
-                  }`}
-                  title="Đánh dấu đã thuộc vững (Phím M)"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{currentQ.mastered ? 'Đã thuộc' : 'Thuộc'}</span>
-                </button>
+          {/* Card Middle: Main Prompt / Term or Answer / Definition */}
+          <div className="my-auto py-8 text-center space-y-4">
+            {!isFlipped ? (
+              <div className="space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                  CÂU HỎI / KHÁI NIỆM
+                </span>
+                <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white leading-snug">
+                  {currentQ.prompt}
+                </h2>
               </div>
-            </div>
-
-            {/* Answer & Explanation Details */}
-            <div className="my-auto py-4 space-y-4 max-w-2xl mx-auto w-full">
-              <div className="text-center">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#8E8E93] mb-1">
+            ) : (
+              <div className="space-y-4 animate-in fade-in duration-200">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#007afc]">
                   ĐÁP ÁN CHÍNH XÁC
-                </p>
-                <h3 className="font-flow-serif text-2xl sm:text-3xl font-medium text-[#5B2DFF] leading-snug">
+                </span>
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-emerald-600 dark:text-emerald-400 leading-snug">
                   {currentQ.correctAnswer}
-                </h3>
-              </div>
+                </h2>
 
-              {/* Giải thích chi tiết */}
-              {currentQ.explanation && (
-                <div className="bg-white/90 rounded-2xl p-4 border border-[#5B2DFF]/15 shadow-[0_4px_12px_rgba(91,45,255,0.03)] space-y-1.5 text-left">
-                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#5B2DFF] uppercase tracking-wider">
-                    <HelpCircle className="w-3.5 h-3.5" />
-                    <span>Giải thích vì sao:</span>
-                  </div>
-                  <p className="text-xs text-[#1F1F28] leading-relaxed">
-                    {currentQ.explanation}
-                  </p>
-                </div>
-              )}
-
-              {/* Mẹo ghi nhớ & Ví dụ */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-                {currentQ.memoryTip && (
-                  <div className="bg-[#EDE8FF]/50 rounded-2xl p-3 border border-[#C8B4FF]/40 space-y-1">
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-[#5B2DFF]">
-                      <Lightbulb className="w-3 h-3" />
-                      <span>Mẹo nhớ nhanh</span>
+                {/* Explanation / Mnemonic Box */}
+                {currentQ.explanation && (
+                  <div className="max-w-xl mx-auto p-4 rounded-2xl bg-slate-50 dark:bg-black/30 text-left border border-slate-200/60 dark:border-white/5 text-xs text-slate-600 dark:text-slate-300 space-y-1.5 mt-4">
+                    <div className="flex items-center gap-1.5 font-semibold text-slate-800 dark:text-slate-200">
+                      <Lightbulb className="w-4 h-4 text-amber-500" />
+                      <span>Giải thích &amp; Phân tích:</span>
                     </div>
-                    <p className="text-[11px] text-[#1F1F28] leading-relaxed">
-                      {currentQ.memoryTip}
-                    </p>
-                  </div>
-                )}
-
-                {currentQ.example && (
-                  <div className="bg-white rounded-2xl p-3 border border-black/[0.06] space-y-1">
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-[#8E8E93]">
-                      <BookOpen className="w-3 h-3 text-[#5B2DFF]" />
-                      <span>Ví dụ minh họa</span>
-                    </div>
-                    <p className="text-[11px] text-[#8E8E93] italic leading-relaxed">
-                      "{currentQ.example}"
-                    </p>
+                    <p className="leading-relaxed">{currentQ.explanation}</p>
+                    {currentQ.memoryTip && (
+                      <p className="text-purple-600 dark:text-purple-400 font-medium pt-1">
+                        💡 Mẹo ghi nhớ: {currentQ.memoryTip}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
-            </div>
+            )}
+          </div>
 
-            {/* Hint to flip back */}
-            <div className="flex items-center justify-center gap-2 text-xs text-[#8E8E93] font-medium">
-              <RotateCw className="w-3.5 h-3.5 text-[#5B2DFF]" />
-              <span>Chạm để quay lại mặt câu hỏi</span>
-            </div>
+          {/* Card Bottom: Flip hint */}
+          <div className="text-center text-[11px] text-slate-400">
+            Nhấn vào thẻ hoặc nhấn <kbd className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 rounded border text-[10px] font-mono">Space</kbd> để lật xem {isFlipped ? 'câu hỏi' : 'đáp án'}
           </div>
         </div>
       </div>
 
-      {/* Flashcard Pill Navigation Controls (Lilac Flow Design) */}
-      <div className="flex items-center justify-between gap-4 pt-2">
+      {/* 4. Action Controls: Prev / Flip / Next */}
+      <div className="flex items-center justify-center gap-4 pt-2">
         <button
           onClick={handlePrev}
-          style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-          className="group inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold text-[#1F1F28] bg-white border border-black/[0.06] hover:bg-[#F3EFE6] transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/80 dark:bg-white/10 hover:bg-white text-slate-700 dark:text-slate-200 font-medium text-xs shadow-sm transition hover:scale-102 active:scale-98 cursor-pointer border border-white/50"
         >
-          <ChevronLeft className="w-4 h-4 text-[#5B2DFF] transition-transform group-hover:-translate-x-0.5" />
+          <ChevronLeft className="w-4 h-4" />
           <span>Thẻ trước</span>
         </button>
 
-        {/* Center Flip Button (Violet Glowing Pill) */}
         <button
           onClick={handleFlip}
-          style={{
-            backgroundColor: '#5B2DFF',
-            boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-          }}
-          className="inline-flex items-center gap-2 px-7 py-3 rounded-full text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          className="px-6 py-3 rounded-2xl bg-[#007afc] text-white font-semibold text-xs shadow-md hover:bg-sky-600 transition hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2"
         >
-          <RotateCw className="w-4 h-4 stroke-[2.2]" />
-          <span>Lật thẻ</span>
+          <RotateCw className="w-4 h-4" />
+          <span>{isFlipped ? 'Xem đề bài' : 'Lật xem đáp án'}</span>
         </button>
 
         <button
           onClick={handleNext}
-          style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-          className="group inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold text-[#1F1F28] bg-white border border-black/[0.06] hover:bg-[#F3EFE6] transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/80 dark:bg-white/10 hover:bg-white text-slate-700 dark:text-slate-200 font-medium text-xs shadow-sm transition hover:scale-102 active:scale-98 cursor-pointer border border-white/50"
         >
-          <span>Thẻ tiếp theo</span>
-          <ChevronRight className="w-4 h-4 text-[#5B2DFF] transition-transform group-hover:translate-x-0.5" />
+          <span>Thẻ kế tiếp</span>
+          <ChevronRight className="w-4 h-4" />
         </button>
-      </div>
-
-      {/* Keyboard Shortcuts Hint */}
-      <div className="text-center text-[11px] text-[#8E8E93] flex flex-wrap items-center justify-center gap-3 pt-2">
-        <span><kbd className="px-2 py-0.5 bg-white border border-black/[0.08] rounded-md font-mono text-[10px]">Phím cách</kbd> Lật thẻ</span>
-        <span>&bull;</span>
-        <span><kbd className="px-2 py-0.5 bg-white border border-black/[0.08] rounded-md font-mono text-[10px]">&larr;</kbd> <kbd className="px-2 py-0.5 bg-white border border-black/[0.08] rounded-md font-mono text-[10px]">&rarr;</kbd> Điều hướng</span>
-        <span>&bull;</span>
-        <span><kbd className="px-2 py-0.5 bg-white border border-black/[0.08] rounded-md font-mono text-[10px]">S</kbd> Đánh dấu sao</span>
-        <span>&bull;</span>
-        <span><kbd className="px-2 py-0.5 bg-white border border-black/[0.08] rounded-md font-mono text-[10px]">A</kbd> Phát âm</span>
       </div>
     </div>
   );

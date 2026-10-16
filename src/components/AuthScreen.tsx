@@ -87,9 +87,34 @@ export const AuthScreen: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#FCFAF6] text-[#1F1F28] flex flex-col justify-between selection:bg-[#C8B4FF] selection:text-[#5B2DFF]">
+    <div className="relative min-h-screen text-[#1F1F28] flex flex-col justify-between selection:bg-[#C8B4FF] selection:text-[#5B2DFF] overflow-x-hidden">
+      {/* Animated Background from Pinterest (with video + GIF support and elegant dark/tint overlay) */}
+      <div className="fixed inset-0 -z-10 overflow-hidden pointer-events-none select-none">
+        {/* Animated video background (smooth, high quality, loops automatically) */}
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          poster="/assets/login-bg-fallback.jpg"
+          className="absolute inset-0 w-full h-full object-cover object-center scale-105 filter blur-[1px] brightness-[0.88] contrast-[1.05]"
+        >
+          <source src="/assets/login-bg.mp4" type="video/mp4" />
+          {/* Fallback to GIF if video tag unsupported */}
+          <img
+            src="/assets/login-bg.gif"
+            alt="Study Animation Background"
+            className="w-full h-full object-cover object-center"
+          />
+        </video>
+
+        {/* Ambient artistic gradient overlays to maintain readability & modern aesthetic */}
+        <div className="absolute inset-0 bg-gradient-to-br from-black/45 via-black/30 to-purple-950/40 backdrop-blur-[2px]" />
+        <div className="absolute inset-0 bg-radial from-transparent via-black/20 to-black/60" />
+      </div>
+
       {/* Header Bar */}
-      <header className="border-b border-black/[0.04] bg-[#FCFAF6]/90 backdrop-blur-md px-6 py-4 flex items-center justify-between">
+      <header className="relative z-10 border-b border-white/10 bg-white/70 backdrop-blur-md px-6 py-4 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
           <div
             style={{ boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)' }}
@@ -99,15 +124,15 @@ export const AuthScreen: React.FC = () => {
           </div>
           <div>
             <h1 className="font-flow-serif text-lg font-semibold tracking-tight text-[#1F1F28]">
-              QUIZSTUDY <span className="text-[#C8B4FF] italic font-flow-serif">/</span> FLOW
+              QUIZSTUDY <span className="text-[#5B2DFF] italic font-flow-serif">/</span> FLOW
             </h1>
-            <p className="text-[10px] uppercase tracking-wider text-[#8E8E93]">
+            <p className="text-[10px] uppercase tracking-wider text-[#6B7280]">
               Hệ thống Học tập & Ôn thi Cá nhân hóa
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-medium text-emerald-700 bg-emerald-50 px-3.5 py-1.5 rounded-full border border-emerald-200/60">
+        <div className="flex items-center gap-2 text-xs font-medium text-emerald-800 bg-white/80 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-emerald-300/60 shadow-xs">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>Hệ thống trực tuyến</span>
         </div>
@@ -212,12 +237,12 @@ export const AuthScreen: React.FC = () => {
             </div>
           )}
 
-          {/* Authentication Card (Lilac Flow Neumorphic) */}
+          {/* Authentication Card (Frosted Glassmorphism over Animated Aesthetic Background) */}
           <div
             style={{
-              boxShadow: '0 10px 30px rgba(0,0,0,0.03), 0 1px 3px rgba(0,0,0,0.02)'
+              boxShadow: '0 20px 50px rgba(0,0,0,0.25), 0 1px 3px rgba(0,0,0,0.1)'
             }}
-            className="rounded-3xl bg-white border border-black/[0.06] p-7 sm:p-9 relative overflow-hidden"
+            className="rounded-3xl bg-white/90 backdrop-blur-xl border border-white/60 p-7 sm:p-9 relative overflow-hidden transition-all duration-300"
           >
             {/* Top Accent Gradient Bar */}
             <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#5B2DFF] via-[#C8B4FF] to-[#5B2DFF]" />
@@ -379,7 +404,7 @@ export const AuthScreen: React.FC = () => {
       </main>
 
       {/* Footer attribution */}
-      <footer className="py-6 text-center text-xs text-[#8E8E93] border-t border-black/[0.04]">
+      <footer className="relative z-10 py-5 text-center text-xs font-medium text-white/80 bg-black/30 backdrop-blur-md border-t border-white/10">
         <span>QUIZSTUDY / FLOW • Ứng dụng học tập (made by NHH and Gehihi)</span>
       </footer>
     </div>

@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import confetti from 'canvas-confetti';
 import {
   ArrowLeft,
+  Volume2,
   CheckCircle2,
   AlertCircle,
-  HelpCircle,
-  ArrowRight,
   RotateCcw,
-  Volume2,
   Sparkles,
-  Check
+  ArrowRight,
+  BookOpen,
+  Keyboard
 } from 'lucide-react';
 import { StudySet, Question } from '../types';
 import { speakText } from '../lib/speech';
+import { sound } from '../lib/sound';
 
 interface WriteModeProps {
   studySet: StudySet;
@@ -19,106 +21,135 @@ interface WriteModeProps {
 }
 
 export const WriteMode: React.FC<WriteModeProps> = ({ studySet, onBack }) => {
+  const [questions, setQuestions] = useState<Question[]>(() => [...studySet.questions]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [inputVal, setInputVal] = useState('');
   const [isAnswered, setIsAnswered] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
-  const [isFinished, setIsFinished] = useState(false);
-  const [correctTally, setCorrectTally] = useState(0);
+  const [correctCount, setCorrectCount] = useState(0);
+  const [isGameOver, setIsGameOver] = useState(false);
 
-  const questions = studySet.questions;
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setQuestions([...studySet.questions]);
+    setCurrentIndex(0);
+    setInputVal('');
+    setIsAnswered(false);
+    setCorrectCount(0);
+    setIsGameOver(false);
+  }, [studySet]);
+
+  useEffect(() => {
+    if (!isAnswered && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [currentIndex, isAnswered]);
+
   const currentQ = questions[currentIndex];
   const total = questions.length;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isAnswered || !inputVal.trim()) return;
+    if (isAnswered || !inputVal.trim() || !currentQ) return;
 
-    const userClean = inputVal.trim().toLowerCase();
-    const correctClean = currentQ.correctAnswer.trim().toLowerCase();
-    const ok = userClean === correctClean;
+    const normalizedInput = inputVal.trim().toLowerCase();
+    const normalizedCorrect = currentQ.correctAnswer.trim().toLowerCase();
 
-    setIsCorrect(ok);
+    const matched = normalizedInput === normalizedCorrect;
+    setIsCorrect(matched);
     setIsAnswered(true);
-    if (ok) setCorrectTally(prev => prev + 1);
+
+    if (matched) {
+      sound.playCorrect();
+      setCorrectCount(prev => prev + 1);
+    } else {
+      sound.playWrong();
+    }
   };
 
   const handleNext = () => {
+    sound.playClick();
     if (currentIndex + 1 < total) {
       setCurrentIndex(prev => prev + 1);
       setInputVal('');
       setIsAnswered(false);
-      setIsCorrect(false);
     } else {
-      setIsFinished(true);
+      setIsGameOver(true);
+      sound.playComplete();
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      } catch {
+        // Fallback
+      }
     }
-  };
-
-  const handleRestart = () => {
-    setCurrentIndex(0);
-    setInputVal('');
-    setIsAnswered(false);
-    setIsCorrect(false);
-    setIsFinished(false);
-    setCorrectTally(0);
   };
 
   if (total === 0) {
     return (
       <div className="max-w-xl mx-auto px-4 py-16 text-center space-y-4">
-        <h3 className="font-flow-serif text-2xl font-normal text-[#1F1F28]">Bộ thẻ chưa có câu hỏi</h3>
-        <p className="text-xs text-[#8E8E93]">Hãy bổ sung câu hỏi vào bộ thẻ trước khi luyện viết.</p>
+        <h3 className="text-xl font-bold text-slate-900 dark:text-white">Bộ thẻ chưa có câu hỏi</h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400">Hãy bổ sung câu hỏi vào bộ thẻ trước khi luyện viết.</p>
         <button
           onClick={onBack}
-          className="mt-2 px-6 py-2.5 rounded-full text-xs font-semibold text-white bg-[#5B2DFF] shadow-[0_8px_20px_rgba(91,45,255,0.35)] cursor-pointer"
+          className="mt-2 px-6 py-2.5 rounded-xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 cursor-pointer shadow-sm"
         >
-          Quay lại
+          Quay lại bộ thẻ
         </button>
       </div>
     );
   }
 
-  if (isFinished) {
-    const accuracy = Math.round((correctTally / total) * 100);
+  if (isGameOver) {
+    const accuracy = Math.round((correctCount / total) * 100);
+
     return (
-      <div
-        style={{
-          boxShadow: '0 16px 36px rgba(91, 45, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.02)',
-        }}
-        className="max-w-md mx-auto my-12 p-8 sm:p-10 rounded-3xl bg-white border border-black/[0.05] text-center space-y-6"
-      >
-        <div
-          style={{ boxShadow: '0 8px 24px rgba(91, 45, 255, 0.35)' }}
-          className="w-16 h-16 mx-auto rounded-full bg-[#5B2DFF] text-white flex items-center justify-center"
-        >
-          <Check className="w-8 h-8 stroke-[3]" />
+      <div className="max-w-md mx-auto my-12 p-8 sm:p-10 rounded-3xl glass-card text-center space-y-6">
+        <div className="w-16 h-16 mx-auto rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
+          <CheckCircle2 className="w-8 h-8 stroke-[2.2] animate-bounce" />
         </div>
 
         <div className="space-y-2">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold bg-[#EDE8FF] text-[#5B2DFF] border border-[#5B2DFF]/15">
-            <Sparkles className="w-3 h-3" /> Hoàn thành luyện nhớ
-          </div>
-          <h3 className="font-flow-serif text-3xl font-normal text-[#1F1F28]">Ghi nhớ xuất sắc!</h3>
-          <p className="text-xs text-[#8E8E93]">
-            Bạn đã gõ chính xác {correctTally} / {total} câu ({accuracy}%).
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">Ghi nhớ xuất sắc!</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Bạn đã hoàn thành phiên luyện viết cho bộ thẻ <strong>{studySet.title}</strong>
           </p>
+        </div>
+
+        <div className="p-5 rounded-2xl bg-white/60 dark:bg-white/[0.04] border border-white/50 dark:border-white/5 flex items-center justify-around">
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Độ chính xác</p>
+            <p className="text-3xl font-bold font-mono text-[#007afc] mt-1">{accuracy}%</p>
+          </div>
+          <div className="h-8 w-px bg-slate-200 dark:bg-slate-700" />
+          <div>
+            <p className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">Đúng</p>
+            <p className="text-3xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">{correctCount}/{total}</p>
+          </div>
         </div>
 
         <div className="flex justify-center gap-3 pt-2">
           <button
-            onClick={handleRestart}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-full text-xs font-semibold text-[#1F1F28] bg-[#FCFAF6] hover:bg-[#F3EFE6] border border-black/[0.06] transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            onClick={() => {
+              sound.playClick();
+              setCurrentIndex(0);
+              setInputVal('');
+              setIsAnswered(false);
+              setCorrectCount(0);
+              setIsGameOver(false);
+            }}
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white/80 dark:bg-white/10 hover:bg-white transition cursor-pointer"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-[#5B2DFF]" />
+            <RotateCcw className="w-3.5 h-3.5 text-[#007afc]" />
             <span>Luyện lại</span>
           </button>
           <button
             onClick={onBack}
-            style={{
-              backgroundColor: '#5B2DFF',
-              boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-            }}
-            className="px-7 py-3 rounded-full text-xs font-semibold text-white transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            className="px-7 py-3 rounded-2xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 transition cursor-pointer shadow-sm"
           >
             Về bộ thẻ
           </button>
@@ -132,144 +163,129 @@ export const WriteMode: React.FC<WriteModeProps> = ({ studySet, onBack }) => {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 animate-in fade-in duration-200">
       {/* Top bar */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 glass-card-sm p-4 rounded-2xl">
         <div className="flex items-center gap-3">
           <button
-            onClick={onBack}
-            style={{ boxShadow: '0 2px 6px rgba(0, 0, 0, 0.02)' }}
-            className="p-2 text-[#8E8E93] hover:text-[#1F1F28] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            onClick={() => {
+              sound.playClick();
+              onBack();
+            }}
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-white/10 transition"
             title="Thoát"
           >
-            <ArrowLeft className="w-4 h-4 text-[#5B2DFF]" />
+            <ArrowLeft className="w-4 h-4 text-[#007afc]" />
           </button>
           <div>
-            <div className="flex items-center gap-2 text-[11px] font-medium text-[#8E8E93]">
+            <div className="flex items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
               <span className="uppercase tracking-wider">Luyện viết gợi nhớ</span>
               <span aria-hidden="true">&bull;</span>
-              <span className="text-[#1F1F28] font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
+              <span className="text-slate-900 dark:text-white font-semibold truncate max-w-[180px] sm:max-w-xs">{studySet.title}</span>
             </div>
-            <h2 className="font-flow-serif text-lg sm:text-xl font-normal text-[#1F1F28]">
-              Câu {currentIndex + 1} <span className="text-[#8E8E93] font-sans text-sm">/ {total}</span>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              Câu {currentIndex + 1} <span className="text-slate-400 font-sans text-sm">/ {total}</span>
             </h2>
           </div>
         </div>
 
         <button
           onClick={() => speakText(currentQ.prompt)}
-          className="p-2 text-[#8E8E93] hover:text-[#5B2DFF] bg-white border border-black/[0.06] rounded-full transition-all hover:scale-105 cursor-pointer"
+          className="p-2.5 rounded-xl text-slate-500 hover:text-sky-600 transition"
           title="Phát âm câu hỏi"
         >
           <Volume2 className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Progress Bar with Lilac Gradient */}
-      <div className="w-full bg-[#EDE8FF] h-1.5 rounded-full overflow-hidden">
+      {/* Progress Bar */}
+      <div className="w-full bg-black/10 dark:bg-white/10 h-1.5 rounded-full overflow-hidden">
         <div
-          className="h-full rounded-full transition-all duration-300 ease-out"
-          style={{
-            width: `${progressPct}%`,
-            background: 'linear-gradient(90deg, #C8B4FF 0%, #5B2DFF 100%)',
-            boxShadow: '0 0 8px rgba(91, 45, 255, 0.4)'
-          }}
+          className="h-full rounded-full transition-all duration-300 ease-out bg-[#007afc]"
+          style={{ width: `${progressPct}%` }}
         />
       </div>
 
       {/* Question Card */}
-      <div
-        style={{
-          boxShadow: '0 16px 36px rgba(91, 45, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.02)',
-        }}
-        className="bg-white rounded-3xl p-6 sm:p-9 border border-black/[0.05] space-y-6"
-      >
+      <div className="glass-card rounded-3xl p-6 sm:p-10 space-y-6">
         <div className="space-y-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-[#5B2DFF] block">
-            Câu hỏi / Thuật ngữ
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#007afc] block">
+            CÂU HỎI / ĐỊNH NGHĨA
           </span>
-          <h3 className="font-flow-serif text-2xl sm:text-3xl font-normal text-[#1F1F28] leading-[1.3]">
+          <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white leading-snug">
             {currentQ.prompt}
           </h3>
         </div>
 
-        {/* Input Form with Pill Design */}
+        {/* Input Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="relative">
             <input
+              ref={inputRef}
               type="text"
-              disabled={isAnswered}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="Gõ đáp án chính xác..."
-              className="w-full px-5 py-3.5 pr-28 rounded-full border border-black/[0.08] bg-[#FCFAF6] text-xs sm:text-sm text-[#1F1F28] placeholder-[#8E8E93] focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20 transition-all"
+              disabled={isAnswered}
+              placeholder="Gõ đáp án chính xác tại đây..."
+              className="w-full px-5 py-3.5 pr-28 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/90 dark:bg-white/5 text-sm font-medium text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-[#007afc] focus:ring-2 focus:ring-[#007afc]/30 transition-all"
             />
-
-            {!isAnswered && (
+            {!isAnswered ? (
               <button
                 type="submit"
                 disabled={!inputVal.trim()}
-                style={{
-                  backgroundColor: '#5B2DFF',
-                  boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)',
-                }}
-                className="absolute right-1.5 top-1.5 bottom-1.5 px-4 rounded-full text-xs font-semibold text-white disabled:opacity-50 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-1.5"
+                className="absolute right-1.5 top-1.5 bottom-1.5 px-4 rounded-xl text-xs font-bold text-white bg-[#007afc] hover:bg-sky-600 disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5"
               >
-                <span>Nộp</span>
+                <span>Kiểm tra</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
-            )}
+            ) : null}
           </div>
         </form>
 
-        {/* Feedback Section */}
+        {/* Answer Feedback */}
         {isAnswered && (
           <div
             className={`p-5 rounded-2xl border space-y-3 animate-in fade-in duration-200 ${
               isCorrect
-                ? 'bg-emerald-50/80 border-emerald-300'
-                : 'bg-rose-50/80 border-rose-300'
+                ? 'bg-emerald-500/10 border-emerald-500/30'
+                : 'bg-rose-500/10 border-rose-500/30'
             }`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div
                   className={`w-6 h-6 rounded-full flex items-center justify-center text-white ${
-                    isCorrect ? 'bg-emerald-600' : 'bg-rose-600'
+                    isCorrect ? 'bg-emerald-500' : 'bg-rose-500'
                   }`}
                 >
-                  {isCorrect ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : <AlertCircle className="w-3.5 h-3.5 stroke-[3]" />}
+                  {isCorrect ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
                 </div>
-                <span className={`text-xs font-bold ${isCorrect ? 'text-emerald-900' : 'text-rose-900'}`}>
-                  {isCorrect ? 'Chính xác tuyệt đối!' : 'Chưa đúng rồi'}
+                <span className={`text-xs font-bold ${isCorrect ? 'text-emerald-800 dark:text-emerald-300' : 'text-rose-800 dark:text-rose-300'}`}>
+                  {isCorrect ? 'Chính xác hoàn toàn!' : 'Chưa đúng, hãy ghi nhớ đáp án bên dưới'}
                 </span>
               </div>
 
               <button
                 onClick={handleNext}
-                style={{
-                  backgroundColor: '#5B2DFF',
-                  boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)',
-                }}
-                className="px-4 py-2 rounded-full text-xs font-semibold text-white inline-flex items-center gap-1.5 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 inline-flex items-center gap-1.5 transition cursor-pointer shadow-xs"
               >
                 <span>{currentIndex + 1 < total ? 'Câu kế tiếp' : 'Xem kết quả'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
-            <div className="text-xs space-y-1">
-              <p className="text-[#8E8E93]">
-                Đáp án chuẩn: <span className="font-semibold text-emerald-800">{currentQ.correctAnswer}</span>
+            <div className="text-xs space-y-1 pt-1">
+              <p className="text-slate-600 dark:text-slate-300">
+                Đáp án chuẩn: <span className="font-bold text-emerald-700 dark:text-emerald-400">{currentQ.correctAnswer}</span>
               </p>
               {!isCorrect && (
-                <p className="text-[#8E8E93]">
-                  Bạn đã nhập: <span className="font-semibold text-rose-700">{inputVal}</span>
+                <p className="text-slate-600 dark:text-slate-300">
+                  Bạn đã nhập: <span className="font-semibold text-rose-600 dark:text-rose-400">{inputVal}</span>
                 </p>
               )}
             </div>
 
             {currentQ.explanation && (
-              <p className="text-[11px] text-[#1F1F28] bg-white/80 p-3 rounded-xl border border-black/[0.05]">
-                <span className="font-semibold text-[#5B2DFF]">Giải thích: </span>
+              <p className="text-[11px] text-slate-700 dark:text-slate-300 bg-white/60 dark:bg-white/[0.04] p-3 rounded-xl border border-white/50 dark:border-white/5">
+                <span className="font-bold text-[#007afc]">Giải thích: </span>
                 {currentQ.explanation}
               </p>
             )}
