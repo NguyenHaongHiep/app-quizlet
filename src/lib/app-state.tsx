@@ -535,9 +535,39 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   };
 
   const addBulkQuestionsToSet = async (setId: string, newQuestions: Question[]) => {
-    const targetSet = studySets.find(s => s.id === setId);
-    if (!targetSet) return;
-    await persistQuestionsToSet(setId, [...targetSet.questions, ...newQuestions]);
+    let nextQuestions: Question[] = [];
+    const now = new Date().toISOString();
+
+    setStudySets(prev => {
+      const targetSet = prev.find(s => s.id === setId);
+      if (!targetSet) return prev;
+      nextQuestions = [...targetSet.questions, ...newQuestions];
+      return prev.map(s => s.id === setId ? {
+        ...s,
+        questions: nextQuestions,
+        updatedAt: now
+      } : s);
+    });
+
+    const supabase = getSupabase();
+    if (supabase && userId && userId !== 'guest-user') {
+      try {
+        if (nextQuestions.length > 0) {
+          const { error } = await supabase
+            .from('study_sets')
+            .update({
+              questions: nextQuestions,
+              updated_at: now
+            })
+            .eq('id', setId)
+            .eq('user_id', userId);
+          if (error) throw error;
+        }
+      } catch (err: any) {
+        console.error('Lỗi khi bulk update câu hỏi trên Supabase:', err);
+        setSyncError(err.message || 'Không thể đồng bộ câu hỏi lên Supabase.');
+      }
+    }
   };
 
   const toggleStarQuestion = async (setId: string, questionId: string) => {

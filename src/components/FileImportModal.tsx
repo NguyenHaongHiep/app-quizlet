@@ -22,6 +22,7 @@ import {
   downloadJsonTemplate
 } from '../lib/file-parser';
 import { Question } from '../types';
+import { sound } from '../lib/sound';
 
 interface FileImportModalProps {
   isOpen: boolean;
@@ -34,7 +35,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
   onClose,
   targetSetId
 }) => {
-  const { studySets, courses, addBulkQuestionsToSet, addStudySet, setActiveSetId, setActiveMode } = useAppState();
+  const { studySets, courses, addBulkQuestionsToSet, addStudySet, setActiveSetId } = useAppState();
 
   const [isDragging, setIsDragging] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -79,10 +80,12 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
         throw new Error('Không trích xuất được câu hỏi nào từ file. Hãy kiểm tra lại tiêu đề cột.');
       }
       setParseResult(result);
+      sound.playCorrect();
       // Tự động gợi ý tên bộ thẻ mới từ tên file
       const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
       setNewSetTitle(baseName.charAt(0).toUpperCase() + baseName.slice(1));
     } catch (err: any) {
+      sound.playWrong();
       setErrorMessage(err.message || 'Lỗi khi xử lý file.');
     } finally {
       setIsProcessing(false);
@@ -116,6 +119,8 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
   const handleConfirmImport = async () => {
     if (!parseResult || parseResult.questions.length === 0) return;
 
+    sound.playClick();
+
     if (destinationMode === 'existing') {
       if (!selectedSetId) {
         setErrorMessage('Vui lòng chọn bộ thẻ cần thêm câu hỏi vào.');
@@ -129,12 +134,13 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
         return;
       }
       const course = courses.find(c => c.id === newSetCourseId) || courses[0];
+      // Pass questions directly so study set is created atomically with all imported questions
       const newSet = await addStudySet({
         title: newSetTitle.trim(),
         description: `Nhập từ file ${parseResult.fileName} (${parseResult.questions.length} câu hỏi)`,
-        courseId: course?.id || courses[0]?.id || 'course-eng'
+        courseId: course?.id || courses[0]?.id || 'course-eng',
+        questions: parseResult.questions
       });
-      await addBulkQuestionsToSet(newSet.id, parseResult.questions);
       setActiveSetId(newSet.id);
     }
 
@@ -142,59 +148,60 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#1F1F28]/35 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
-      <div
-        style={{
-          boxShadow: '0 24px 60px rgba(91, 45, 255, 0.12), 0 4px 16px rgba(0, 0, 0, 0.04)',
-        }}
-        className="bg-white rounded-3xl border border-black/[0.06] w-full max-w-2xl overflow-hidden my-8 animate-in zoom-in-95 duration-200"
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-[#18152e] rounded-3xl border border-slate-200/80 dark:border-white/10 w-full max-w-2xl overflow-hidden my-8 shadow-2xl animate-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-black/[0.05] flex items-center justify-between bg-[#FCFAF6]">
+        <div className="px-6 py-5 border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between bg-slate-50/80 dark:bg-black/20">
           <div className="flex items-center gap-3">
-            <div
-              style={{ boxShadow: '0 6px 16px rgba(91, 45, 255, 0.25)' }}
-              className="w-10 h-10 rounded-2xl bg-[#5B2DFF] text-white flex items-center justify-center shrink-0"
-            >
+            <div className="w-10 h-10 rounded-2xl bg-[#007afc] text-white flex items-center justify-center shrink-0 shadow-md shadow-sky-500/25">
               <UploadCloud className="w-5 h-5 stroke-[2.2]" />
             </div>
             <div>
-              <h3 className="font-flow-serif text-lg font-normal text-[#1F1F28]">
-                Nhập câu hỏi từ file bên ngoài
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                Nhập câu hỏi từ file
               </h3>
-              <p className="text-[11px] text-[#8E8E93]">
-                Hỗ trợ file Excel (.xlsx), CSV (.csv) và JSON (.json)
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Hỗ trợ file Excel (.xlsx, .xls), CSV (.csv) và JSON (.json)
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-white hover:bg-black/5 text-[#8E8E93] hover:text-[#1F1F28] flex items-center justify-center transition-colors cursor-pointer border border-black/[0.05]"
+            onClick={() => {
+              sound.playClick();
+              onClose();
+            }}
+            className="w-8 h-8 rounded-full bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/20 text-slate-500 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Tab Switcher (Pill Style) */}
-        <div className="px-6 pt-4 border-b border-black/[0.05] flex gap-2">
+        {/* Tab Switcher */}
+        <div className="px-6 pt-4 border-b border-slate-200/80 dark:border-white/10 flex gap-2">
           <button
             type="button"
-            onClick={() => setActiveTab('upload')}
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('upload');
+            }}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
               activeTab === 'upload'
-                ? 'border-[#5B2DFF] text-[#5B2DFF]'
-                : 'border-transparent text-[#8E8E93] hover:text-[#1F1F28]'
+                ? 'border-[#007afc] text-[#007afc]'
+                : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Tải lên &amp; Xử lý file
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('guide')}
+            onClick={() => {
+              sound.playClick();
+              setActiveTab('guide');
+            }}
             className={`pb-2.5 px-3 text-xs font-semibold border-b-2 transition-all cursor-pointer ${
               activeTab === 'guide'
-                ? 'border-[#5B2DFF] text-[#5B2DFF]'
-                : 'border-transparent text-[#8E8E93] hover:text-[#1F1F28]'
+                ? 'border-[#007afc] text-[#007afc]'
+                : 'border-transparent text-slate-500 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             Tải file mẫu &amp; Hướng dẫn định dạng
@@ -205,7 +212,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
         {activeTab === 'upload' && (
           <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
             {errorMessage && (
-              <div className="p-3.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl flex items-center gap-2">
+              <div className="p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-800 dark:text-rose-300 text-xs rounded-2xl flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>{errorMessage}</span>
               </div>
@@ -220,8 +227,8 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                 onClick={() => fileInputRef.current?.click()}
                 className={`border-2 border-dashed rounded-3xl p-8 sm:p-10 text-center cursor-pointer transition-all ${
                   isDragging
-                    ? 'border-[#5B2DFF] bg-[#EDE8FF]/40 ring-4 ring-[#5B2DFF]/15'
-                    : 'border-[#C8B4FF]/60 hover:border-[#5B2DFF] bg-[#FCFAF6] hover:bg-[#F4EFFE]'
+                    ? 'border-[#007afc] bg-sky-50 dark:bg-sky-950/40 ring-4 ring-[#007afc]/15'
+                    : 'border-slate-300 dark:border-white/20 hover:border-[#007afc] bg-slate-50 dark:bg-white/[0.02] hover:bg-sky-50/50'
                 }`}
               >
                 <input
@@ -232,34 +239,31 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                   onChange={handleFileChange}
                 />
 
-                <div
-                  style={{ boxShadow: '0 8px 20px rgba(91, 45, 255, 0.25)' }}
-                  className="w-14 h-14 mx-auto rounded-full bg-[#5B2DFF] text-white flex items-center justify-center mb-4 transition-transform hover:scale-105"
-                >
+                <div className="w-14 h-14 mx-auto rounded-full bg-[#007afc] text-white flex items-center justify-center mb-4 shadow-lg shadow-sky-500/30 transition-transform hover:scale-105">
                   <UploadCloud className="w-7 h-7 stroke-[2]" />
                 </div>
 
-                <h4 className="font-flow-serif text-lg font-normal text-[#1F1F28]">
+                <h4 className="text-lg font-bold text-slate-900 dark:text-white">
                   Kéo thả file câu hỏi vào đây
                 </h4>
-                <p className="text-xs text-[#8E8E93] mt-1 max-w-sm mx-auto">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
                   hoặc bấm vào khung để chọn file từ máy tính, tablet hoặc điện thoại
                 </p>
 
                 <div className="flex flex-wrap items-center justify-center gap-2 mt-4">
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-black/[0.05] rounded-full text-[11px] font-medium text-[#1F1F28]">
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-200 shadow-xs">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Excel (.xlsx, .xls)
                   </span>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-black/[0.05] rounded-full text-[11px] font-medium text-[#1F1F28]">
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-200 shadow-xs">
                     <FileText className="w-3.5 h-3.5 text-sky-600" /> CSV (.csv)
                   </span>
-                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-white border border-black/[0.05] rounded-full text-[11px] font-medium text-[#1F1F28]">
-                    <FileCode className="w-3.5 h-3.5 text-[#5B2DFF]" /> JSON (.json)
+                  <span className="inline-flex items-center gap-1 px-3 py-1 bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 rounded-full text-[11px] font-medium text-slate-700 dark:text-slate-200 shadow-xs">
+                    <FileCode className="w-3.5 h-3.5 text-purple-600" /> JSON (.json)
                   </span>
                 </div>
 
                 {isProcessing && (
-                  <p className="text-xs text-[#5B2DFF] font-semibold mt-4 animate-pulse">
+                  <p className="text-xs text-[#007afc] font-semibold mt-4 animate-pulse">
                     Đang phân tích cấu trúc cột và đọc dữ liệu...
                   </p>
                 )}
@@ -267,14 +271,14 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
             ) : (
               /* Kết quả đọc file thành công */
               <div className="space-y-4">
-                <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-300 flex items-start justify-between gap-3">
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-bold text-emerald-900">
+                      <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
                         Đã trích xuất thành công {parseResult.questions.length} câu hỏi
                       </p>
-                      <p className="text-[11px] text-emerald-700">
+                      <p className="text-[11px] text-emerald-700 dark:text-emerald-300">
                         File nguồn: <span className="font-semibold">{parseResult.fileName}</span> ({parseResult.totalRows} dòng dữ liệu)
                       </p>
                     </div>
@@ -285,15 +289,15 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                       setParseResult(null);
                       setErrorMessage(null);
                     }}
-                    className="text-xs font-semibold text-emerald-800 hover:underline cursor-pointer"
+                    className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:underline cursor-pointer"
                   >
                     Chọn file khác
                   </button>
                 </div>
 
                 {/* Chọn nơi lưu câu hỏi (Vào bộ thẻ mới hoặc bộ thẻ đã có) */}
-                <div className="p-4 rounded-2xl bg-[#FCFAF6] border border-black/[0.06] space-y-4">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8E8E93] block">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-black/20 border border-slate-200/80 dark:border-white/10 space-y-4">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                     Nơi lưu danh sách câu hỏi
                   </span>
 
@@ -301,11 +305,10 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setDestinationMode('new')}
-                      style={destinationMode === 'new' ? { backgroundColor: '#5B2DFF', color: '#fff', boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)' } : {}}
-                      className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
                         destinationMode === 'new'
-                          ? 'border-[#5B2DFF] font-semibold'
-                          : 'border-black/[0.06] bg-white text-[#8E8E93] hover:text-[#1F1F28]'
+                          ? 'bg-[#007afc] border-[#007afc] text-white font-bold shadow-md shadow-sky-500/20'
+                          : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       Tạo bộ thẻ mới
@@ -313,11 +316,10 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setDestinationMode('existing')}
-                      style={destinationMode === 'existing' ? { backgroundColor: '#5B2DFF', color: '#fff', boxShadow: '0 4px 14px rgba(91, 45, 255, 0.35)' } : {}}
-                      className={`p-2.5 rounded-2xl border text-center transition-all cursor-pointer ${
+                      className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
                         destinationMode === 'existing'
-                          ? 'border-[#5B2DFF] font-semibold'
-                          : 'border-black/[0.06] bg-white text-[#8E8E93] hover:text-[#1F1F28]'
+                          ? 'bg-[#007afc] border-[#007afc] text-white font-bold shadow-md shadow-sky-500/20'
+                          : 'border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
                       Thêm vào bộ thẻ đã có
@@ -327,7 +329,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                   {destinationMode === 'new' ? (
                     <div className="space-y-3 pt-2">
                       <div>
-                        <label className="block text-xs font-semibold text-[#1F1F28] mb-1">
+                        <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1">
                           Tên bộ thẻ mới *
                         </label>
                         <input
@@ -335,21 +337,21 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                           value={newSetTitle}
                           onChange={(e) => setNewSetTitle(e.target.value)}
                           placeholder="VD: Từ vựng Tuần 1..."
-                          className="w-full px-4 py-2.5 text-xs bg-white border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF]"
+                          className="w-full px-4 py-2.5 text-xs bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-[#007afc]"
                         />
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold text-[#1F1F28] mb-1">
+                        <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1">
                           Thuộc học phần
                         </label>
                         <select
                           value={newSetCourseId}
                           onChange={(e) => setNewSetCourseId(e.target.value)}
-                          className="w-full px-4 py-2.5 text-xs bg-white border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF]"
+                          className="w-full px-4 py-2.5 text-xs bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-[#007afc]"
                         >
                           {courses.map(c => (
-                            <option key={c.id} value={c.id}>
+                            <option key={c.id} value={c.id} className="dark:bg-slate-900">
                               [{c.code}] {c.name}
                             </option>
                           ))}
@@ -358,18 +360,18 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                     </div>
                   ) : (
                     <div className="pt-2">
-                      <label className="block text-xs font-semibold text-[#1F1F28] mb-1">
+                      <label className="block text-xs font-semibold text-slate-800 dark:text-slate-200 mb-1">
                         Chọn bộ thẻ đích *
                       </label>
                       <select
                         value={selectedSetId}
                         onChange={(e) => setSelectedSetId(e.target.value)}
-                        className="w-full px-4 py-2.5 text-xs bg-white border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF]"
+                        className="w-full px-4 py-2.5 text-xs bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white rounded-xl focus:outline-none focus:border-[#007afc]"
                       >
                         {studySets.map(s => {
                           const course = courses.find(c => c.id === s.courseId);
                           return (
-                            <option key={s.id} value={s.id}>
+                            <option key={s.id} value={s.id} className="dark:bg-slate-900">
                               {s.title} ({course?.code || 'Chung'} - {s.questions.length} câu hiện có)
                             </option>
                           );
@@ -381,20 +383,20 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
 
                 {/* Preview 3 câu hỏi đầu tiên */}
                 <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#8E8E93]">
-                    Xem trước các câu hỏi trích xuất ({Math.min(parseResult.questions.length, 3)}/{parseResult.questions.length})
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    Xem trước ({Math.min(parseResult.questions.length, 3)}/{parseResult.questions.length} câu)
                   </span>
                   <div className="space-y-2 max-h-48 overflow-y-auto">
                     {parseResult.questions.slice(0, 3).map((q, i) => (
-                      <div key={i} className="p-3 bg-white border border-black/[0.06] rounded-2xl text-xs space-y-1">
-                        <p className="font-semibold text-[#1F1F28]">
+                      <div key={i} className="p-3 bg-white dark:bg-white/5 border border-slate-200/80 dark:border-white/10 rounded-xl text-xs space-y-1">
+                        <p className="font-semibold text-slate-900 dark:text-white">
                           {i + 1}. {q.prompt}
                         </p>
-                        <p className="text-emerald-700">
-                          &bull; Đáp án đúng: <span className="font-medium">{q.correctAnswer}</span>
+                        <p className="text-emerald-600 dark:text-emerald-400 font-medium">
+                          &bull; Đáp án đúng: {q.correctAnswer}
                         </p>
                         {q.explanation && (
-                          <p className="text-[#8E8E93] text-[11px]">
+                          <p className="text-slate-500 dark:text-slate-400 text-[11px]">
                             &bull; Giải thích: {q.explanation}
                           </p>
                         )}
@@ -411,10 +413,10 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
         {activeTab === 'guide' && (
           <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto">
             <div className="space-y-3">
-              <h4 className="font-flow-serif text-base font-normal text-[#1F1F28]">
+              <h4 className="text-base font-bold text-slate-900 dark:text-white">
                 Tải file mẫu định dạng chuẩn
               </h4>
-              <p className="text-xs text-[#8E8E93] leading-relaxed">
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
                 Tải về các file mẫu bên dưới để soạn sẵn câu hỏi trắc nghiệm cùng phần giải thích, ví dụ và mẹo nhớ trên máy tính trước khi upload:
               </p>
 
@@ -422,12 +424,12 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                 <button
                   type="button"
                   onClick={downloadExcelTemplate}
-                  className="p-4 rounded-2xl border border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-left transition-all group cursor-pointer"
+                  className="p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 text-left transition-all group cursor-pointer"
                 >
                   <FileSpreadsheet className="w-6 h-6 text-emerald-600 mb-2 group-hover:scale-110 transition-transform" />
-                  <p className="text-xs font-bold text-[#1F1F28]">File Excel (.xlsx)</p>
-                  <p className="text-[10px] text-[#8E8E93] mt-0.5">Mẫu bảng tính có tiêu đề cột chuẩn tiếng Việt</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5B2DFF] mt-2">
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">File Excel (.xlsx)</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Tiêu đề cột tiếng Việt chuẩn</p>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#007afc] mt-2">
                     <Download className="w-3 h-3" /> Tải về
                   </span>
                 </button>
@@ -435,12 +437,12 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                 <button
                   type="button"
                   onClick={downloadCsvTemplate}
-                  className="p-4 rounded-2xl border border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-left transition-all group cursor-pointer"
+                  className="p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 text-left transition-all group cursor-pointer"
                 >
                   <FileText className="w-6 h-6 text-sky-600 mb-2 group-hover:scale-110 transition-transform" />
-                  <p className="text-xs font-bold text-[#1F1F28]">File CSV (.csv)</p>
-                  <p className="text-[10px] text-[#8E8E93] mt-0.5">Định dạng phân cách dấu phẩy UTF-8</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5B2DFF] mt-2">
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">File CSV (.csv)</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Phân cách dấu phẩy UTF-8</p>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#007afc] mt-2">
                     <Download className="w-3 h-3" /> Tải về
                   </span>
                 </button>
@@ -448,12 +450,12 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
                 <button
                   type="button"
                   onClick={downloadJsonTemplate}
-                  className="p-4 rounded-2xl border border-black/[0.06] bg-[#FCFAF6] hover:bg-[#F3EFE6] text-left transition-all group cursor-pointer"
+                  className="p-4 rounded-2xl border border-slate-200/80 dark:border-white/10 bg-slate-50 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 text-left transition-all group cursor-pointer"
                 >
-                  <FileCode className="w-6 h-6 text-[#5B2DFF] mb-2 group-hover:scale-110 transition-transform" />
-                  <p className="text-xs font-bold text-[#1F1F28]">File JSON (.json)</p>
-                  <p className="text-[10px] text-[#8E8E93] mt-0.5">Dành cho lập trình viên và xuất tự động</p>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#5B2DFF] mt-2">
+                  <FileCode className="w-6 h-6 text-purple-600 mb-2 group-hover:scale-110 transition-transform" />
+                  <p className="text-xs font-bold text-slate-900 dark:text-white">File JSON (.json)</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Dành cho xuất dữ liệu tự động</p>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#007afc] mt-2">
                     <Download className="w-3 h-3" /> Tải về
                   </span>
                 </button>
@@ -462,48 +464,48 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
 
             {/* Bảng hướng dẫn các cột */}
             <div className="space-y-3 pt-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-[#8E8E93] block">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
                 Cấu trúc các cột bắt buộc và tùy chọn trong file Excel/CSV:
               </span>
 
-              <div className="border border-black/[0.06] rounded-2xl overflow-hidden text-xs">
+              <div className="border border-slate-200/80 dark:border-white/10 rounded-2xl overflow-hidden text-xs">
                 <table className="w-full text-left">
-                  <thead className="bg-[#FCFAF6] text-[#8E8E93] font-semibold border-b border-black/[0.05]">
+                  <thead className="bg-slate-50 dark:bg-black/20 text-slate-500 dark:text-slate-400 font-semibold border-b border-slate-200/80 dark:border-white/10">
                     <tr>
                       <th className="p-3">Tên cột gợi ý</th>
                       <th className="p-3">Ý nghĩa</th>
                       <th className="p-3">Ví dụ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-black/[0.04]">
+                  <tbody className="divide-y divide-slate-200/60 dark:divide-white/5">
                     <tr>
-                      <td className="p-3 font-semibold text-[#1F1F28]">Câu hỏi (hoặc Thuật ngữ)</td>
-                      <td className="p-3 text-[#8E8E93]">Đề bài câu hỏi / Từ vựng (Bắt buộc)</td>
+                      <td className="p-3 font-semibold text-slate-900 dark:text-white">Câu hỏi (Thuật ngữ)</td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">Đề bài câu hỏi / Từ vựng (Bắt buộc)</td>
                       <td className="p-3">Lạm phát là gì?</td>
                     </tr>
                     <tr>
-                      <td className="p-3 font-semibold text-[#1F1F28]">Đáp án đúng</td>
-                      <td className="p-3 text-[#8E8E93]">Nội dung câu trả lời chuẩn xác (Bắt buộc)</td>
+                      <td className="p-3 font-semibold text-slate-900 dark:text-white">Đáp án đúng</td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">Nội dung câu trả lời chuẩn xác (Bắt buộc)</td>
                       <td className="p-3">Sự gia tăng mức giá chung liên tục</td>
                     </tr>
                     <tr>
-                      <td className="p-3 font-semibold text-[#1F1F28]">Lựa chọn A, B, C, D</td>
-                      <td className="p-3 text-[#8E8E93]">4 phương án trắc nghiệm</td>
+                      <td className="p-3 font-semibold text-slate-900 dark:text-white">Lựa chọn A, B, C, D</td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">4 phương án trắc nghiệm</td>
                       <td className="p-3">Các phương án A, B, C, D</td>
                     </tr>
                     <tr>
-                      <td className="p-3 font-semibold text-[#1F1F28]">Giải thích</td>
-                      <td className="p-3 text-[#8E8E93]">Lý do vì sao đáp án đúng</td>
+                      <td className="p-3 font-semibold text-slate-900 dark:text-white">Giải thích</td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">Lý do vì sao đáp án đúng</td>
                       <td className="p-3">Theo định nghĩa kinh tế vĩ mô...</td>
                     </tr>
                     <tr>
-                      <td className="p-3 font-semibold text-[#1F1F28]">Ví dụ</td>
-                      <td className="p-3 text-[#8E8E93]">Tình huống ứng dụng thực tế</td>
+                      <td className="p-3 font-semibold text-slate-900 dark:text-white">Ví dụ</td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">Tình huống ứng dụng thực tế</td>
                       <td className="p-3">Giá bát phở tăng từ 30k lên 40k</td>
                     </tr>
                     <tr>
-                      <td className="p-3 font-semibold text-[#1F1F28]">Mẹo nhớ</td>
-                      <td className="p-3 text-[#8E8E93]">Mẹo ghi nhớ nhanh kiến thức</td>
+                      <td className="p-3 font-semibold text-slate-900 dark:text-white">Mẹo nhớ</td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">Mẹo ghi nhớ nhanh kiến thức</td>
                       <td className="p-3">Nhớ chữ 'Phát' trong phát tán giá</td>
                     </tr>
                   </tbody>
@@ -514,11 +516,14 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
         )}
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-black/[0.05] flex items-center justify-end gap-3 bg-[#FCFAF6]">
+        <div className="px-6 py-4 border-t border-slate-200/80 dark:border-white/10 flex items-center justify-end gap-3 bg-slate-50/80 dark:bg-black/20">
           <button
             type="button"
-            onClick={onClose}
-            className="px-5 py-2.5 text-xs font-medium text-[#1F1F28] bg-white hover:bg-[#F3EFE6] border border-black/[0.06] rounded-full transition-all cursor-pointer"
+            onClick={() => {
+              sound.playClick();
+              onClose();
+            }}
+            className="px-5 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-white/10 hover:bg-slate-100 dark:hover:bg-white/20 border border-slate-200 dark:border-white/10 rounded-xl transition cursor-pointer"
           >
             Đóng
           </button>
@@ -527,11 +532,7 @@ export const FileImportModal: React.FC<FileImportModalProps> = ({
             <button
               type="button"
               onClick={handleConfirmImport}
-              style={{
-                backgroundColor: '#5B2DFF',
-                boxShadow: '0 8px 20px rgba(91, 45, 255, 0.35)',
-              }}
-              className="px-6 py-2.5 text-xs font-semibold text-white rounded-full hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-6 py-2.5 text-xs font-bold text-white bg-[#007afc] hover:bg-sky-600 rounded-xl hover:scale-102 active:scale-98 transition-all cursor-pointer flex items-center gap-1.5 shadow-md shadow-sky-500/25"
             >
               <span>Xác nhận nhập {parseResult.questions.length} câu hỏi</span>
               <ArrowRight className="w-3.5 h-3.5" />
