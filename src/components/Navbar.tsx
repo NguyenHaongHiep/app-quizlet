@@ -121,8 +121,12 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
-            onClick={() => resetToDefaultData()}
-            title="Khôi phục dữ liệu mẫu ban đầu"
+            onClick={() => {
+              if (window.confirm('Bạn có chắc muốn xóa tất cả dữ liệu để bắt đầu lại?')) {
+                resetToDefaultData();
+              }
+            }}
+            title="Xóa toàn bộ dữ liệu (Bắt đầu mới)"
             className="p-2 text-[#8E8E93] hover:text-[#1F1F28] hover:bg-black/5 rounded-full transition-colors cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />

@@ -45,7 +45,7 @@ export const SetModal: React.FC<SetModalProps> = ({
       setError('Vui lòng nhập tên bộ thẻ học tập.');
       return;
     }
-    if (!courseId) {
+    if (!courseId && courses.length > 0) {
       setError('Vui lòng chọn học phần tương ứng.');
       return;
     }
@@ -53,7 +53,7 @@ export const SetModal: React.FC<SetModalProps> = ({
     onSave({
       title: title.trim(),
       description: description.trim(),
-      courseId
+      courseId: courseId || 'AUTO_DEFAULT'
     });
 
     onClose();
@@ -119,17 +119,23 @@ export const SetModal: React.FC<SetModalProps> = ({
             <label className="block text-xs font-semibold text-[#1F1F28] mb-1.5">
               Học phần trực thuộc *
             </label>
-            <select
-              value={courseId}
-              onChange={(e) => setCourseId(e.target.value)}
-              className="w-full px-4 py-2.5 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20 cursor-pointer"
-            >
-              {courses.map(c => (
-                <option key={c.id} value={c.id}>
-                  [{c.code}] {c.name}
-                </option>
-              ))}
-            </select>
+            {courses.length === 0 ? (
+              <div className="p-3 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 rounded-2xl text-xs text-sky-800 dark:text-sky-300">
+                <span className="font-semibold">Tự động khởi tạo:</span> Tài khoản của bạn chưa có môn học nào. Hệ thống sẽ tự động tạo học phần <code className="font-mono bg-sky-100 dark:bg-sky-900 px-1 rounded">[GEN101] Học phần Chung</code> để gắn bộ thẻ này vào.
+              </div>
+            ) : (
+              <select
+                value={courseId}
+                onChange={(e) => setCourseId(e.target.value)}
+                className="w-full px-4 py-2.5 text-xs bg-[#FCFAF6] border border-black/[0.08] rounded-2xl focus:outline-none focus:border-[#5B2DFF] focus:ring-2 focus:ring-[#5B2DFF]/20 cursor-pointer"
+              >
+                {courses.map(c => (
+                  <option key={c.id} value={c.id}>
+                    [{c.code}] {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div>

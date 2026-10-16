@@ -335,11 +335,25 @@ function MainApp() {
         isOpen={isSetModalOpen}
         onClose={() => setIsSetModalOpen(false)}
         courses={courses}
-        onSave={(data) => {
+        onSave={async (data) => {
           if (editingSet) {
             updateStudySet(editingSet.id, data);
           } else {
-            addStudySet(data);
+            let targetCourseId = data.courseId;
+            if (!targetCourseId || targetCourseId === 'AUTO_DEFAULT' || courses.length === 0) {
+              const defaultCourse = await addCourse({
+                code: 'GEN101',
+                name: 'Học phần Chung',
+                description: 'Học phần tự động tạo cho các bộ thẻ học tập',
+                color: '#007afc',
+                semester: 'Học kỳ 1'
+              });
+              targetCourseId = defaultCourse.id;
+            }
+            addStudySet({
+              ...data,
+              courseId: targetCourseId
+            });
           }
         }}
         initialSet={editingSet}

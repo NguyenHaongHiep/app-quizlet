@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { Course, StudySet, Question, StudyMode, UserStats } from '../types';
-import { INITIAL_COURSES, INITIAL_STUDY_SETS } from './sample-data';
+import { INITIAL_COURSES, INITIAL_STUDY_SETS, DEMO_COURSES, DEMO_STUDY_SETS } from './sample-data';
 import { getSupabase } from './supabase';
 import { useAuth } from './auth-context';
 
@@ -40,7 +40,11 @@ interface AppStateContextType {
   toggleMasterQuestion: (setId: string, questionId: string) => Promise<void>;
   recordQuizResult: (correctCount: number, totalCount: number) => Promise<void>;
   
-  // Tiện ích
+  // Tiện ích & Làm sạch dữ liệu
+  hasSampleData: boolean;
+  clearSampleData: () => Promise<void>;
+  clearAllData: () => Promise<void>;
+  loadDemoData: () => Promise<void>;
   resetToDefaultData: () => Promise<void>;
   exportAllDataAsJson: () => void;
   refreshFromSupabase: (showLoadingSpinner?: boolean) => Promise<boolean>;
@@ -60,18 +64,18 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [courses, setCourses] = useState<Course[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_COURSES);
-      return saved ? JSON.parse(saved) : INITIAL_COURSES;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_COURSES;
+      return [];
     }
   });
 
   const [studySets, setStudySets] = useState<StudySet[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_SETS);
-      return saved ? JSON.parse(saved) : INITIAL_STUDY_SETS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_STUDY_SETS;
+      return [];
     }
   });
 
@@ -79,17 +83,17 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       const saved = localStorage.getItem(STORAGE_KEY_STATS);
       return saved ? JSON.parse(saved) : {
-        streakDays: 3,
-        totalCardsStudied: 42,
-        quizzesCompleted: 7,
-        accuracyRate: 85
+        streakDays: 0,
+        totalCardsStudied: 0,
+        quizzesCompleted: 0,
+        accuracyRate: 100
       };
     } catch {
       return {
-        streakDays: 3,
-        totalCardsStudied: 42,
-        quizzesCompleted: 7,
-        accuracyRate: 85
+        streakDays: 0,
+        totalCardsStudied: 0,
+        quizzesCompleted: 0,
+        accuracyRate: 100
       };
     }
   });
@@ -137,45 +141,17 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         .eq('user_id', userId)
         .maybeSingle();
 
-      // If user is brand new in Supabase (0 courses and 0 study sets in cloud)
+      // If user is brand new in Supabase (0 courses and 0 study sets in cloud), start clean
       if ((!dbCourses || dbCourses.length === 0) && (!dbSets || dbSets.length === 0)) {
-        // Seed default starter pack for the authenticated user so their cloud account is initialized
-        const initialSeedCourses = INITIAL_COURSES.map(c => ({
-          id: c.id,
-          user_id: userId,
-          code: c.code,
-          name: c.name,
-          description: c.description,
-          icon: c.icon || '',
-          color: c.color,
-          semester: c.semester || ''
-        }));
-
-        const initialSeedSets = INITIAL_STUDY_SETS.map(s => ({
-          id: s.id,
-          user_id: userId,
-          course_id: s.courseId,
-          title: s.title,
-          description: s.description,
-          color: s.color || '#5B2DFF',
-          icon: s.icon || '',
-          questions: s.questions
-        }));
-
-        await supabase.from('courses').upsert(initialSeedCourses);
-        await supabase.from('study_sets').upsert(initialSeedSets);
-        await supabase.from('user_stats').upsert({
-          user_id: userId,
-          streak_days: 1,
-          total_cards_studied: 0,
-          quizzes_completed: 0,
-          accuracy_rate: 100
-        });
-
-        setCourses(INITIAL_COURSES);
-        setStudySets(INITIAL_STUDY_SETS);
-        setStats({
-          streakDays: 1,
+        setCourses([]);
+        setStudySets([]);
+        setStats(dbStats ? {
+          streakDays: dbStats.streak_days || 0,
+          totalCardsStudied: dbStats.total_cards_studied || 0,
+          quizzesCompleted: dbStats.quizzes_completed || 0,
+          accuracyRate: dbStats.accuracy_rate || 100
+        } : {
+          streakDays: 0,
           totalCardsStudied: 0,
           quizzesCompleted: 0,
           accuracyRate: 100
@@ -235,17 +211,32 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Trigger Supabase fetch whenever user changes, and set up Realtime subscription for cross-device sync
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setCourses([]);
+      setStudySets([]);
+      setActiveCourseId(null);
+      setActiveSetId(null);
+      setActiveMode(null);
+      return;
+    }
 
     // Load user's local cache first to ensure immediate response
     try {
       const cachedCourses = localStorage.getItem(`uniflash_courses_${userId}`);
       const cachedSets = localStorage.getItem(`uniflash_sets_${userId}`);
       const cachedStats = localStorage.getItem(`uniflash_stats_${userId}`);
-      if (cachedCourses) setCourses(JSON.parse(cachedCourses));
-      if (cachedSets) setStudySets(JSON.parse(cachedSets));
-      if (cachedStats) setStats(JSON.parse(cachedStats));
-    } catch (e) {}
+      setCourses(cachedCourses ? JSON.parse(cachedCourses) : []);
+      setStudySets(cachedSets ? JSON.parse(cachedSets) : []);
+      setStats(cachedStats ? JSON.parse(cachedStats) : {
+        streakDays: 0,
+        totalCardsStudied: 0,
+        quizzesCompleted: 0,
+        accuracyRate: 100
+      });
+    } catch (e) {
+      setCourses([]);
+      setStudySets([]);
+    }
 
     if (userId === 'guest-user') return;
 
@@ -617,11 +608,117 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const hasSampleData = useMemo(() => {
+    const SAMPLE_COURSE_IDS = ['course-eng', 'course-phi', 'course-mat', 'course-eco'];
+    return courses.some(c =>
+      SAMPLE_COURSE_IDS.includes(c.id) ||
+      c.name.includes('Tiếng Anh Học Thuật') ||
+      c.name.includes('Triết học Mác - Lênin') ||
+      c.name.includes('Đại số Tuyến tính') ||
+      c.name.includes('Kinh tế học Vi mô') ||
+      c.code === 'ENG201' ||
+      c.code === 'PHI101'
+    );
+  }, [courses]);
+
+  const clearSampleData = async () => {
+    const SAMPLE_COURSE_IDS = ['course-eng', 'course-phi', 'course-mat', 'course-eco'];
+    const SAMPLE_SET_IDS = ['set-eng-01'];
+
+    const remainingCourses = courses.filter(c =>
+      !SAMPLE_COURSE_IDS.includes(c.id) &&
+      !c.name.includes('Tiếng Anh Học Thuật') &&
+      !c.name.includes('Triết học Mác - Lênin') &&
+      !c.name.includes('Đại số Tuyến tính') &&
+      !c.name.includes('Kinh tế học Vi mô') &&
+      c.code !== 'ENG201' &&
+      c.code !== 'PHI101'
+    );
+
+    const removedCourseIds = courses
+      .filter(c => !remainingCourses.some(rc => rc.id === c.id))
+      .map(c => c.id);
+
+    const remainingSets = studySets.filter(s =>
+      !SAMPLE_SET_IDS.includes(s.id) &&
+      !removedCourseIds.includes(s.courseId) &&
+      !s.title.includes('Từ vựng Học thuật Trọng điểm')
+    );
+
+    setCourses(remainingCourses);
+    setStudySets(remainingSets);
+
+    if (activeSetId && !remainingSets.some(s => s.id === activeSetId)) {
+      setActiveSetId(null);
+      setActiveMode(null);
+    }
+    if (activeCourseId && !remainingCourses.some(c => c.id === activeCourseId)) {
+      setActiveCourseId(null);
+    }
+
+    try {
+      localStorage.setItem(STORAGE_KEY_COURSES, JSON.stringify(remainingCourses));
+      localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(remainingSets));
+    } catch (e) {}
+
+    const supabase = getSupabase();
+    if (supabase && userId && userId !== 'guest-user') {
+      try {
+        for (const sId of SAMPLE_SET_IDS) {
+          await supabase.from('study_sets').delete().eq('id', sId).eq('user_id', userId);
+        }
+        for (const cId of [...SAMPLE_COURSE_IDS, ...removedCourseIds]) {
+          await supabase.from('courses').delete().eq('id', cId).eq('user_id', userId);
+        }
+      } catch (err) {
+        console.warn('Lỗi khi xóa dữ liệu mẫu trên Supabase:', err);
+      }
+    }
+  };
+
+  const clearAllData = async () => {
+    setCourses([]);
+    setStudySets([]);
+    setActiveCourseId(null);
+    setActiveSetId(null);
+    setActiveMode(null);
+    const zeroStats: UserStats = {
+      streakDays: 0,
+      totalCardsStudied: 0,
+      quizzesCompleted: 0,
+      accuracyRate: 100
+    };
+    setStats(zeroStats);
+
+    try {
+      localStorage.removeItem(STORAGE_KEY_COURSES);
+      localStorage.removeItem(STORAGE_KEY_SETS);
+      localStorage.removeItem(STORAGE_KEY_STATS);
+    } catch (e) {}
+
+    const supabase = getSupabase();
+    if (supabase && userId && userId !== 'guest-user') {
+      try {
+        await supabase.from('study_sets').delete().eq('user_id', userId);
+        await supabase.from('courses').delete().eq('user_id', userId);
+        await supabase.from('user_stats').delete().eq('user_id', userId);
+      } catch (err) {
+        console.warn('Lỗi khi xóa sạch dữ liệu trên Supabase:', err);
+      }
+    }
+  };
+
+  const loadDemoData = async () => {
+    setCourses(DEMO_COURSES);
+    setStudySets(DEMO_STUDY_SETS);
+    try {
+      localStorage.setItem(STORAGE_KEY_COURSES, JSON.stringify(DEMO_COURSES));
+      localStorage.setItem(STORAGE_KEY_SETS, JSON.stringify(DEMO_STUDY_SETS));
+    } catch (e) {}
+  };
+
   const resetToDefaultData = async () => {
-    setCourses(INITIAL_COURSES);
-    setStudySets(INITIAL_STUDY_SETS);
-    localStorage.removeItem(STORAGE_KEY_COURSES);
-    localStorage.removeItem(STORAGE_KEY_SETS);
+    await clearAllData();
   };
 
   const exportAllDataAsJson = () => {
@@ -671,6 +768,10 @@ export const AppStateProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         toggleStarQuestion,
         toggleMasterQuestion,
         recordQuizResult,
+        hasSampleData,
+        clearSampleData,
+        clearAllData,
+        loadDemoData,
         resetToDefaultData,
         exportAllDataAsJson,
         refreshFromSupabase

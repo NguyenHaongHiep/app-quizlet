@@ -17,6 +17,7 @@ import {
   Cloud,
   LogOut,
   Sparkles,
+  Trash2,
   X
 } from 'lucide-react';
 import { useAppState } from '../lib/app-state';
@@ -57,7 +58,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     searchQuery,
     setSearchQuery,
     syncError,
-    isSyncing
+    isSyncing,
+    hasSampleData,
+    clearSampleData,
+    clearAllData
   } = useAppState();
 
   const { user, signOut } = useAuth();
@@ -264,9 +268,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          {filteredData.length === 0 ? (
+          {courses.length === 0 ? (
+            <div className="px-3 py-6 text-center space-y-2">
+              <p className="text-slate-400 text-xs">Chưa có môn học nào</p>
+              <button
+                onClick={onOpenNewCourse}
+                className="text-[11px] font-semibold text-[#007afc] dark:text-sky-400 hover:underline cursor-pointer"
+              >
+                + Tạo môn học đầu tiên
+              </button>
+            </div>
+          ) : filteredData.length === 0 ? (
             <div className="px-3 py-6 text-center text-slate-400 text-xs">
-              Chưa có học phần nào phù hợp
+              Không tìm thấy học phần phù hợp
             </div>
           ) : (
             filteredData.map(({ course, sets }) => {
@@ -417,17 +431,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            <button
-              onClick={() => {
-                sound.playClick();
-                signOut();
-              }}
-              title="Đăng xuất"
-              className="p-1.5 text-slate-400 hover:text-red-500 transition rounded-lg hover:bg-white/60 dark:hover:bg-white/10"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={async () => {
+                  sound.playClick();
+                  if (window.confirm('Bạn có chắc chắn muốn xóa tất cả dữ liệu (môn học, bộ thẻ) để bắt đầu tài khoản hoàn toàn trống?')) {
+                    await clearAllData();
+                  }
+                }}
+                title="Xóa toàn bộ dữ liệu (Bắt đầu tài khoản trống)"
+                className="p-1.5 text-slate-400 hover:text-amber-500 transition rounded-lg hover:bg-white/60 dark:hover:bg-white/10 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  signOut();
+                }}
+                title="Đăng xuất"
+                className="p-1.5 text-slate-400 hover:text-red-500 transition rounded-lg hover:bg-white/60 dark:hover:bg-white/10 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
+
+          {/* Quick Clear Sample Data Prompt if detected */}
+          {hasSampleData && (
+            <button
+              onClick={async () => {
+                sound.playClick();
+                if (window.confirm('Xóa sạch 4 môn học mẫu ban đầu (Tiếng Anh, Triết học, Toán, Kinh tế)?')) {
+                  await clearSampleData();
+                }
+              }}
+              className="w-full mt-2.5 py-1.5 px-2 rounded-lg text-[10px] font-semibold text-amber-800 dark:text-amber-300 bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 transition text-center flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+            >
+              <Sparkles className="w-3 h-3 text-amber-600 shrink-0" />
+              <span>Xóa 4 môn học mẫu ban đầu</span>
+            </button>
+          )}
         </div>
       </aside>
     </>

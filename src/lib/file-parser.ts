@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
 import { Question, QuestionType } from '../types';
 
 export interface ParsedQuestionResult {
@@ -9,7 +10,7 @@ export interface ParsedQuestionResult {
 }
 
 /**
- * Trình phân tích file thông minh (Excel, CSV, JSON, TXT)
+ * Robust file parsing for Excel (.xlsx, .xls), CSV (.csv), JSON (.json), and TXT (.txt)
  */
 export async function parseUploadedFile(file: File): Promise<ParsedQuestionResult> {
   const extension = file.name.split('.').pop()?.toLowerCase() || '';
@@ -28,13 +29,13 @@ export async function parseUploadedFile(file: File): Promise<ParsedQuestionResul
 }
 
 /**
- * Phân tích file Excel (.xlsx, .xls)
+ * Phân tích file Excel (.xlsx, .xls) qua XLSX library
  */
 async function parseExcelFile(file: File): Promise<ParsedQuestionResult> {
   const buffer = await file.arrayBuffer();
   const workbook = XLSX.read(buffer, { type: 'array' });
   const firstSheetName = workbook.SheetNames[0];
-  
+
   if (!firstSheetName) {
     throw new Error('File Excel rỗng, không tìm thấy trang tính (Sheet).');
   }
@@ -46,16 +47,40 @@ async function parseExcelFile(file: File): Promise<ParsedQuestionResult> {
 }
 
 /**
- * Phân tích file CSV (.csv)
+ * Phân tích file CSV (.csv) sử dụng PapaParse (RFC 4180 compliant)
+ * Giải quyết triệt để lỗi lệch cột khi có dấu phẩy nằm trong nội dung giải thích,
+ * dấu ngoặc kép bọc chuỗi (quoted strings) và ngắt dòng bên trong ô văn bản.
  */
 async function parseCsvFile(file: File): Promise<ParsedQuestionResult> {
   const text = await file.text();
-  const workbook = XLSX.read(text, { type: 'string' });
-  const firstSheetName = workbook.SheetNames[0];
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
-  return extractQuestionsFromRecords(rawRows, file.name);
+  return new Promise((resolve, reject) => {
+    Papa.parse<Record<string, any>>(text, {
+      header: true,
+      skipEmptyLines: 'greedy',
+      dynamicTyping: false,
+      transformHeader: (header: string) => header.trim(),
+      complete: (results) => {
+        try {
+          if (results.errors && results.errors.length > 0) {
+            console.warn('PapaParse warnings/errors:', results.errors);
+          }
+
+          if (!results.data || results.data.length === 0) {
+            throw new Error('File CSV không có dữ liệu hoặc không chứa dòng tiêu đề hợp lệ.');
+          }
+
+          const parsed = extractQuestionsFromRecords(results.data, file.name);
+          resolve(parsed);
+        } catch (err: any) {
+          reject(err);
+        }
+      },
+      error: (err: Error) => {
+        reject(new Error(`Lỗi phân tích file CSV: ${err.message}`));
+      }
+    });
+  });
 }
 
 /**
@@ -79,89 +104,185 @@ async function parseJsonFile(file: File): Promise<ParsedQuestionResult> {
 }
 
 /**
- * Phân tích file văn bản TXT (.txt) theo dạng dòng hoặc định dạng Quizlet (Tab-separated)
+ * Phân tích file TXT (.txt)
  */
 async function parseTxtFile(file: File): Promise<ParsedQuestionResult> {
   const text = await file.text();
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  return parsePastedText(text, file.name);
+}
+
+/**
+ * SMART "PASTE & GENERATE" PARSER
+ * Phân tích văn bản thô từ ghi chú, danh sách từ vựng, tài liệu hoặc câu hỏi trắc nghiệm
+ * Tự động nhận diện nhiều định dạng phổ biến:
+ * 1. Phân cách bằng ký tự: Term - Definition, Term : Definition, Term => Definition, Term \t Definition
+ * 2. Cấu trúc câu hỏi trắc nghiệm: Question ... A. ... B. ... C. ... D. ... Answer: ... Explanation: ...
+ * 3. Cấu trúc Q&A: Q: ... A: ... Exp: ... Tip: ...
+ */
+export function parsePastedText(rawText: string, sourceName = 'Văn bản dán nhanh'): ParsedQuestionResult {
+  const cleaned = rawText.trim();
+  if (!cleaned) {
+    return { questions: [], errors: ['Văn bản trống, vui lòng nhập nội dung.'], totalRows: 0, fileName: sourceName };
+  }
+
+  const lines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const questions: Question[] = [];
   const errors: string[] = [];
 
-  // Kiểm tra xem có phải định dạng phân cách bởi Tab (Thuật ngữ \t Định nghĩa) không
-  let tabCount = 0;
-  lines.forEach(l => {
-    if (l.includes('\t')) tabCount++;
-  });
+  // Kiểm tra xem văn bản có phải dạng câu hỏi trắc nghiệm theo khối không (chứa A. B. hoặc Q: / Question:)
+  const hasQuizBlocks = lines.some(l => /^(câu\s*\d+|q\d*|question\d*):/i.test(l) || /^[A-D][\.\)]\s+/i.test(l));
+  const hasQnABlocks = lines.some(l => /^[Qq]:\s*/i.test(l)) && lines.some(l => /^[Aa]:\s*/i.test(l));
 
-  if (tabCount > 0) {
-    // Dạng Tab-separated
-    lines.forEach((line, index) => {
-      const parts = line.split('\t').map(p => p.trim());
-      if (parts.length >= 2) {
-        questions.push({
-          id: `q-txt-${Date.now()}-${index}`,
-          type: 'multiple_choice',
-          prompt: parts[0],
-          correctAnswer: parts[1],
-          options: [parts[1]], // Sẽ được bổ sung lựa chọn giả lập nếu cần
-          explanation: parts[2] || `Khái niệm chuẩn: "${parts[1]}"`,
-          example: parts[3] || '',
-          memoryTip: parts[4] || ''
-        });
-      } else {
-        errors.push(`Dòng ${index + 1}: Thiếu ký tự phân cách Tab giữa câu hỏi và đáp án.`);
-      }
-    });
-  } else {
-    // Dạng dòng hỏi - đáp theo khối
-    // Q: ... A: ... B: ... C: ... D: ... Ans: ...
+  if (hasQuizBlocks) {
+    // Parser Dạng 1: Khối câu hỏi trắc nghiệm A, B, C, D
     let currentPrompt = '';
     let currentOptions: string[] = [];
     let currentAns = '';
     let currentExp = '';
+    let currentTip = '';
+
+    const pushCurrentBlock = () => {
+      if (currentPrompt && (currentAns || currentOptions.length > 0)) {
+        questions.push(buildParsedQuestion(currentPrompt, currentOptions, currentAns, currentExp, currentTip, questions.length));
+      }
+      currentPrompt = '';
+      currentOptions = [];
+      currentAns = '';
+      currentExp = '';
+      currentTip = '';
+    };
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+
+      // Bắt đầu một câu hỏi mới
       if (/^(câu\s*\d+|q\d*|question\d*):/i.test(line)) {
-        if (currentPrompt && (currentAns || currentOptions.length > 0)) {
-          questions.push(buildQuestion(currentPrompt, currentOptions, currentAns, currentExp, questions.length));
-        }
+        pushCurrentBlock();
         currentPrompt = line.replace(/^(câu\s*\d+|q\d*|question\d*):\s*/i, '');
-        currentOptions = [];
-        currentAns = '';
-        currentExp = '';
-      } else if (/^[A-D]\.\s*/i.test(line)) {
-        currentOptions.push(line.replace(/^[A-D]\.\s*/i, ''));
-      } else if (/^(đáp án|answer|ans):\s*/i.test(line)) {
-        currentAns = line.replace(/^(đáp án|answer|ans):\s*/i, '');
-      } else if (/^(giải thích|explanation|exp):\s*/i.test(line)) {
-        currentExp = line.replace(/^(giải thích|explanation|exp):\s*/i, '');
+      } else if (/^[A-D][\.\)]\s+/i.test(line)) {
+        currentOptions.push(line.replace(/^[A-D][\.\)]\s+/i, ''));
+      } else if (/^(đáp án|answer|ans|đáp án đúng):\s*/i.test(line)) {
+        currentAns = line.replace(/^(đáp án|answer|ans|đáp án đúng):\s*/i, '');
+      } else if (/^(giải thích|explanation|exp|lý do):\s*/i.test(line)) {
+        currentExp = line.replace(/^(giải thích|explanation|exp|lý do):\s*/i, '');
+      } else if (/^(mẹo nhớ|tip|mnemonic|mẹo):\s*/i.test(line)) {
+        currentTip = line.replace(/^(mẹo nhớ|tip|mnemonic|mẹo):\s*/i, '');
       } else if (!currentPrompt) {
         currentPrompt = line;
+      } else if (currentOptions.length === 0 && !currentAns) {
+        // Nối thêm vào đề bài nếu chưa xuất hiện lựa chọn
+        currentPrompt += ' ' + line;
       }
     }
+    pushCurrentBlock();
+  } else if (hasQnABlocks) {
+    // Parser Dạng 2: Khối Q&A (Q: ... A: ... Exp: ... Tip: ...)
+    let currentPrompt = '';
+    let currentAns = '';
+    let currentExp = '';
+    let currentTip = '';
 
-    if (currentPrompt && (currentAns || currentOptions.length > 0)) {
-      questions.push(buildQuestion(currentPrompt, currentOptions, currentAns, currentExp, questions.length));
+    const pushQnA = () => {
+      if (currentPrompt && currentAns) {
+        questions.push(buildParsedQuestion(currentPrompt, [currentAns], currentAns, currentExp, currentTip, questions.length));
+      }
+      currentPrompt = '';
+      currentAns = '';
+      currentExp = '';
+      currentTip = '';
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^[Qq]:\s*/i.test(line)) {
+        pushQnA();
+        currentPrompt = line.replace(/^[Qq]:\s*/i, '');
+      } else if (/^[Aa]:\s*/i.test(line)) {
+        currentAns = line.replace(/^[Aa]:\s*/i, '');
+      } else if (/^(giải thích|exp|explanation):\s*/i.test(line)) {
+        currentExp = line.replace(/^(giải thích|exp|explanation):\s*/i, '');
+      } else if (/^(mẹo|tip|mnemonic):\s*/i.test(line)) {
+        currentTip = line.replace(/^(mẹo|tip|mnemonic):\s*/i, '');
+      }
     }
+    pushQnA();
+  } else {
+    // Parser Dạng 3: Mỗi dòng là một thẻ (Phân cách bởi Tab, Dấu gạch ngang, Dấu hai chấm, hoặc Dấu mũi tên)
+    // Ví dụ:
+    // Tenant - Người thuê nhà - Thường ký hợp đồng với chủ trọ - Mẹo: Ten = 10 người thuê
+    // Ubiquitous : Có mặt ở khắp nơi : Smartphones are ubiquitous
+    lines.forEach((line, index) => {
+      // Xác định delimiter phù hợp nhất trên dòng này
+      let parts: string[] = [];
+
+      if (line.includes('\t')) {
+        parts = line.split('\t').map(p => p.trim());
+      } else if (line.includes(' - ')) {
+        parts = line.split(' - ').map(p => p.trim());
+      } else if (line.includes(' : ')) {
+        parts = line.split(' : ').map(p => p.trim());
+      } else if (line.includes(' => ')) {
+        parts = line.split(' => ').map(p => p.trim());
+      } else if (line.includes(' | ')) {
+        parts = line.split(' | ').map(p => p.trim());
+      } else if (line.includes(' // ')) {
+        parts = line.split(' // ').map(p => p.trim());
+      } else if (line.includes('-') && !line.startsWith('-')) {
+        parts = line.split('-').map(p => p.trim());
+      } else if (line.includes(':') && !line.startsWith(':')) {
+        parts = line.split(':').map(p => p.trim());
+      }
+
+      if (parts.length >= 2 && parts[0] && parts[1]) {
+        const prompt = parts[0];
+        const answer = parts[1];
+        const explanation = parts[2] || `Định nghĩa: ${answer}`;
+        const memoryTip = parts[3] || '';
+
+        questions.push({
+          id: `q-paste-${Date.now()}-${index}`,
+          type: 'multiple_choice',
+          prompt,
+          correctAnswer: answer,
+          options: [answer],
+          explanation,
+          example: '',
+          memoryTip
+        });
+      } else {
+        errors.push(`Dòng ${index + 1}: Không tìm thấy dấu phân cách (-, :, hoặc tab) giữa câu hỏi và đáp án.`);
+      }
+    });
   }
 
-  // Chuẩn hóa 4 đáp án cho các câu trắc nghiệm thiếu lựa chọn
+  // Chuẩn hóa 4 lựa chọn trắc nghiệm mượt mà
   normalizeMultipleChoiceOptions(questions);
 
   return {
     questions,
     errors,
     totalRows: lines.length,
-    fileName: file.name
+    fileName: sourceName
   };
 }
 
-function buildQuestion(prompt: string, options: string[], answer: string, exp: string, index: number): Question {
+/**
+ * Xây dựng đối tượng câu hỏi Question chuẩn từ các trường dữ liệu
+ */
+function buildParsedQuestion(
+  prompt: string,
+  options: string[],
+  answer: string,
+  exp: string,
+  tip: string,
+  index: number
+): Question {
   let resolvedAnswer = answer;
-  // Nếu đáp án là 'A', 'B', 'C', 'D' và có options
-  if (['a', 'b', 'c', 'd'].includes(answer.toLowerCase()) && options.length > 0) {
-    const idx = ['a', 'b', 'c', 'd'].indexOf(answer.toLowerCase());
+
+  // Nếu đáp án là 'A', 'B', 'C', 'D' và có options tương ứng
+  const cleanAns = answer.trim().toUpperCase();
+  if (['A', 'B', 'C', 'D'].includes(cleanAns) && options.length > 0) {
+    const idx = ['A', 'B', 'C', 'D'].indexOf(cleanAns);
     if (options[idx]) {
       resolvedAnswer = options[idx];
     }
@@ -173,27 +294,29 @@ function buildQuestion(prompt: string, options: string[], answer: string, exp: s
     prompt,
     options: options.length >= 2 ? options : (resolvedAnswer ? [resolvedAnswer] : []),
     correctAnswer: resolvedAnswer || (options[0] || ''),
-    explanation: exp || `Đáp án chính xác là: ${resolvedAnswer || options[0] || ''}`,
+    explanation: exp || `Đáp án chính xác: ${resolvedAnswer || options[0] || ''}`,
     example: '',
-    memoryTip: ''
+    memoryTip: tip || ''
   };
 }
 
 /**
  * Trích xuất danh sách câu hỏi từ các bản ghi Table/JSON
+ * Đảm bảo mọi trường (prompt, options, correctAnswer, explanation, memoryTip)
+ * luôn liên kết chặt chẽ nguyên tử trong từng câu hỏi duy nhất.
  */
 function extractQuestionsFromRecords(records: Record<string, any>[], fileName: string): ParsedQuestionResult {
   const questions: Question[] = [];
   const errors: string[] = [];
 
   records.forEach((row, index) => {
-    // Tìm các trường dựa trên tên cột linh hoạt (không phân biệt chữ hoa/thường, có dấu hoặc không dấu)
     const rowKeys = Object.keys(row);
+
     const getVal = (patterns: string[]): string => {
       for (const pattern of patterns) {
         const foundKey = rowKeys.find(k => {
           const normalized = k.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-          return normalized.includes(pattern);
+          return normalized === pattern || normalized.includes(pattern);
         });
         if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
           return String(row[foundKey]).trim();
@@ -255,7 +378,6 @@ function extractQuestionsFromRecords(records: Record<string, any>[], fileName: s
 
     // Nếu có đáp án nhưng chưa nằm trong options
     if (answer && !options.includes(answer) && options.length > 0) {
-      // nếu thiếu chỗ thì thêm vào
       if (options.length < 4) {
         options.push(answer);
       }
@@ -266,6 +388,7 @@ function extractQuestionsFromRecords(records: Record<string, any>[], fileName: s
       options = [answer];
     }
 
+    // Khởi tạo câu hỏi nguyên tử: Mọi trường thuộc về đúng câu hỏi đó, không bao giờ tách rời
     questions.push({
       id: `q-parsed-${Date.now()}-${index}`,
       type: qType,
@@ -290,7 +413,8 @@ function extractQuestionsFromRecords(records: Record<string, any>[], fileName: s
 }
 
 /**
- * Đảm bảo mỗi câu trắc nghiệm có đủ 4 lựa chọn bằng cách mượn các đáp án từ câu khác nếu file import chỉ có Thuật ngữ & Định nghĩa
+ * Đảm bảo mỗi câu trắc nghiệm có đủ 4 lựa chọn bằng cách mượn các đáp án từ câu khác
+ * KHÔNG LÀM THAY ĐỔI CẶP (prompt - correctAnswer - explanation) của từng câu
  */
 function normalizeMultipleChoiceOptions(questions: Question[]) {
   const allAnswers = Array.from(new Set(questions.map(q => q.correctAnswer).filter(Boolean)));
@@ -301,7 +425,7 @@ function normalizeMultipleChoiceOptions(questions: Question[]) {
       if (!q.options.includes(q.correctAnswer)) {
         q.options.unshift(q.correctAnswer);
       }
-      
+
       // Nếu ít hơn 4 lựa chọn, lấy thêm từ danh sách các đáp án của bộ câu hỏi
       if (q.options.length < 4 && allAnswers.length > 1) {
         const distractors = allAnswers
@@ -333,6 +457,28 @@ function shuffleArray<T>(array: T[]): T[] {
 export function downloadExcelTemplate() {
   const sampleData = [
     {
+      'Câu hỏi': 'Thuật ngữ nào chỉ người thuê nhà / người sử dụng bất động sản theo hợp đồng?',
+      'Lựa chọn A': 'Tenant (Người thuê nhà)',
+      'Lựa chọn B': 'Landlord (Chủ nhà / Bên cho thuê)',
+      'Lựa chọn C': 'Broker (Môi giới bất động sản)',
+      'Lựa chọn D': 'Sublessor (Bên cho thuê lại)',
+      'Đáp án đúng': 'Tenant (Người thuê nhà)',
+      'Giải thích': 'Tenant là người thuê nhà, có quyền sử dụng bất động sản trong thời hạn hợp đồng và trả tiền thuê định kỳ.',
+      'Ví dụ': 'The tenant must pay rent on the first day of each month.',
+      'Mẹo nhớ': 'Ten = 10 người thuê chung một căn nhà.'
+    },
+    {
+      'Câu hỏi': 'Thuật ngữ nào chỉ chủ sở hữu bất động sản cho người khác thuê?',
+      'Lựa chọn A': 'Landlord (Chủ nhà)',
+      'Lựa chọn B': 'Tenant (Người thuê nhà)',
+      'Lựa chọn C': 'Lessee (Bên thuê)',
+      'Lựa chọn D': 'Mortgagee (Bên nhận thế chấp)',
+      'Đáp án đúng': 'Landlord (Chủ nhà)',
+      'Giải thích': 'Landlord là chủ đất hoặc chủ nhà cho người khác thuê tài sản để thu lợi nhuận.',
+      'Ví dụ': 'The landlord is responsible for major structural repairs.',
+      'Mẹo nhớ': 'Land (Đất) + Lord (Chúa đất / Chủ sở hữu).'
+    },
+    {
       'Câu hỏi': 'Thuật ngữ nào chỉ tình trạng giá cả chung của hàng hóa và dịch vụ tăng liên tục theo thời gian?',
       'Lựa chọn A': 'Lạm phát (Inflation)',
       'Lựa chọn B': 'Giảm phát (Deflation)',
@@ -353,44 +499,20 @@ export function downloadExcelTemplate() {
       'Giải thích': 'Quy luật Lượng - Chất giải thích cách thức phát triển: tích lũy dần về lượng đạt đến điểm nút sẽ dẫn đến bước nhảy biến đổi về chất.',
       'Ví dụ': 'Sinh viên học tập tích lũy đủ 130 tín chỉ (lượng) sẽ thực hiện bước nhảy tốt nghiệp nhận bằng Kỹ sư/Cử nhân (chất).',
       'Mẹo nhớ': 'Lượng đổi -> Chất đổi = Cách thức; Mâu thuẫn = Nguồn gốc; Phủ định = Khuynh hướng.'
-    },
-    {
-      'Câu hỏi': 'Điều kiện để ma trận vuông A khả nghịch (tồn tại ma trận nghịch đảo A⁻¹) là gì?',
-      'Lựa chọn A': 'Định thức det(A) ≠ 0',
-      'Lựa chọn B': 'Định thức det(A) = 0',
-      'Lựa chọn C': 'Hạng của ma trận r(A) < n',
-      'Lựa chọn D': 'Tất cả các phần tử trên đường chéo chính bằng 1',
-      'Đáp án đúng': 'Định thức det(A) ≠ 0',
-      'Giải thích': 'Một ma trận vuông cấp n khả nghịch khi và chỉ khi định thức của nó khác 0 (det(A) ≠ 0), lúc đó ma trận không suy biến.',
-      'Ví dụ': 'Cho A = [[2, 0], [0, 3]]. Khi đó det(A) = 6 ≠ 0 => A khả nghịch và A⁻¹ = [[1/2, 0], [0, 1/3]].',
-      'Mẹo nhớ': 'Khả nghịch = Không suy biến = Định thức Khác không (Khả - Khác).'
-    },
-    {
-      'Câu hỏi': 'Từ vựng tiếng Anh học thuật: "Ubiquitous" mang ý nghĩa gì?',
-      'Lựa chọn A': 'Có mặt ở khắp mọi nơi cùng một lúc (omnipresent)',
-      'Lựa chọn B': 'Hiếm gặp và khó tìm thấy',
-      'Lựa chọn C': 'Mơ hồ, không rõ ràng',
-      'Lựa chọn D': 'Tạm thời, mang tính ngắn hạn',
-      'Đáp án đúng': 'Có mặt ở khắp mọi nơi cùng một lúc (omnipresent)',
-      'Giải thích': 'Ubiquitous /juːˈbɪk.wə.təs/ là tính từ diễn tả điều gì đó dường như xuất hiện ở khắp mọi nơi, rất phổ biến.',
-      'Ví dụ': 'Smartphones have become ubiquitous in daily modern student life.',
-      'Mẹo nhớ': 'U-BI-QUITOUS: liên tưởng "You be everywhere" - ở đâu cũng thấy bạn.'
     }
   ];
 
   const worksheet = XLSX.utils.json_to_sheet(sampleData);
-  
-  // Tự động căn chỉnh độ rộng cột
   worksheet['!cols'] = [
-    { wch: 45 }, // Câu hỏi
-    { wch: 30 }, // Lựa chọn A
-    { wch: 30 }, // Lựa chọn B
-    { wch: 30 }, // Lựa chọn C
-    { wch: 30 }, // Lựa chọn D
-    { wch: 32 }, // Đáp án đúng
-    { wch: 45 }, // Giải thích
-    { wch: 40 }, // Ví dụ
-    { wch: 35 }, // Mẹo nhớ
+    { wch: 45 },
+    { wch: 30 },
+    { wch: 30 },
+    { wch: 30 },
+    { wch: 30 },
+    { wch: 32 },
+    { wch: 45 },
+    { wch: 40 },
+    { wch: 35 }
   ];
 
   const workbook = XLSX.utils.book_new();
@@ -399,14 +521,14 @@ export function downloadExcelTemplate() {
 }
 
 /**
- * Tải file mẫu CSV (.csv)
+ * Tải file mẫu CSV (.csv) chuẩn RFC 4180
  */
 export function downloadCsvTemplate() {
   const csvContent = 
 `"Câu hỏi","Lựa chọn A","Lựa chọn B","Lựa chọn C","Lựa chọn D","Đáp án đúng","Giải thích","Ví dụ","Mẹo nhớ"
-"Thuật ngữ nào chỉ tình trạng giá cả chung tăng liên tục?","Lạm phát","Giảm phát","Đình lạm","Bong bóng kinh tế","Lạm phát","Lạm phát là sự gia tăng mức giá chung kéo dài làm giảm sức mua.","Giá xăng dầu tăng kéo theo giá hàng tiêu dùng tăng","Lạm = thừa thãi, phát = bộc phát giá"
-"Quy luật chỉ ra CÁCH THỨC của sự vận động trong Triết học Mác - Lênin?","Quy luật Lượng - Chất","Quy luật Mâu thuẫn","Quy luật Phủ định của phủ định","Quy luật Giá trị","Quy luật Lượng - Chất","Tích lũy về lượng đến điểm nút sẽ tạo bước nhảy đổi về chất","Học đủ 130 tín chỉ để tốt nghiệp cử nhân","Lượng - Chất: Cách thức; Mâu thuẫn: Động lực"
-"Định thức det(A) khác 0 là điều kiện để ma trận vuông A:","Có ma trận nghịch đảo (khả nghịch)","Bằng ma trận đơn vị","Có hạng bằng 0","Đối xứng qua đường chéo","Có ma trận nghịch đảo (khả nghịch)","Ma trận vuông cấp n khả nghịch khi và chỉ khi det(A) khác 0","A có det(A)=5 thì tồn tại A mũ -1","Khác 0 là Khả nghịch"`;
+"Tenant là gì trong pháp lý bất động sản?","Người thuê nhà (Tenant)","Chủ cho thuê (Landlord)","Nhà môi giới","Bên bảo lãnh","Người thuê nhà (Tenant)","Tenant là người thuê nhà, có quyền sử dụng bất động sản trong thời hạn hợp đồng.","The tenant pays monthly rent.","Ten = 10 người thuê chung"
+"Landlord là gì trong pháp lý bất động sản?","Chủ nhà cho thuê (Landlord)","Người thuê nhà (Tenant)","Người quản lý tòa nhà","Khách trọ","Chủ nhà cho thuê (Landlord)","Landlord là người sở hữu bất động sản cho người khác thuê.","The landlord signed the lease agreement.","Land + Lord = Chủ đất"
+"Thuật ngữ nào chỉ tình trạng giá cả chung tăng liên tục?","Lạm phát (Inflation)","Giảm phát (Deflation)","Đình lạm","Bong bóng kinh tế","Lạm phát (Inflation)","Lạm phát là sự gia tăng mức giá chung kéo dài làm giảm sức mua.","Giá xăng dầu tăng kéo theo giá hàng tiêu dùng tăng.","Lạm = thừa thãi, phát = bộc phát giá"`;
 
   const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);

@@ -42,7 +42,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     setActiveMode,
     deleteCourse,
     searchQuery,
-    setSearchQuery
+    setSearchQuery,
+    hasSampleData,
+    clearSampleData,
+    clearAllData,
+    loadDemoData
   } = useAppState();
 
   const [selectedCourseFilter, setSelectedCourseFilter] = useState<string>('all');
@@ -76,6 +80,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-8 animate-in fade-in duration-300">
+      {/* Sample Data Detection & One-Click Cleanup Banner */}
+      {hasSampleData && (
+        <div className="glass-card rounded-3xl p-5 border-amber-500/40 bg-amber-50/70 dark:bg-amber-950/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 border border-amber-500/30">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                Phát hiện dữ liệu mẫu ban đầu (Tiếng Anh, Triết học, Toán, Kinh tế)
+              </h4>
+              <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                Bạn có thể xóa sạch toàn bộ dữ liệu mẫu ban đầu chỉ với 1 cú click để bắt đầu một tài khoản hoàn toàn trống và sạch sẽ.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            <button
+              onClick={async () => {
+                sound.playClick();
+                await clearSampleData();
+              }}
+              className="w-full sm:w-auto px-4 py-2.5 rounded-xl text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 active:scale-95 transition shadow-sm cursor-pointer whitespace-nowrap"
+            >
+              Xóa sạch dữ liệu mẫu ban đầu
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. GLASSMORPHISM HERO BANNER */}
       <div className="glass-card rounded-3xl p-6 sm:p-10 relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-8">
@@ -280,76 +314,97 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {courses.map(c => {
-            const courseSets = studySets.filter(s => s.courseId === c.id);
-            const questionCount = courseSets.reduce((acc, s) => acc + s.questions.length, 0);
-
-            return (
-              <div
-                key={c.id}
-                className="glass-card rounded-3xl p-5 hover:border-[#007afc]/40 transition-all duration-200 flex flex-col justify-between group"
+        {courses.length === 0 ? (
+          <div className="glass-card rounded-3xl p-8 text-center space-y-3">
+            <BookOpen className="w-8 h-8 text-slate-400 mx-auto" />
+            <h4 className="text-sm font-bold text-slate-900 dark:text-white">Chưa có môn học nào</h4>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
+              Tạo môn học đầu tiên để phân loại các bộ thẻ ôn tập hoặc nạp file lên, hệ thống sẽ tự động khởi tạo cho bạn.
+            </p>
+            <div className="pt-2">
+              <button
+                onClick={() => {
+                  sound.playClick();
+                  onOpenNewCourse();
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-[#007afc] hover:bg-sky-600 transition cursor-pointer shadow-xs"
               >
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span
-                      className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider font-mono text-white"
-                      style={{ backgroundColor: c.color || '#007afc' }}
-                    >
-                      {c.code}
-                    </span>
+                + Thêm môn học đầu tiên
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {courses.map(c => {
+              const courseSets = studySets.filter(s => s.courseId === c.id);
+              const questionCount = courseSets.reduce((acc, s) => acc + s.questions.length, 0);
 
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => {
-                          sound.playClick();
-                          onEditCourse(c);
-                        }}
-                        className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg transition"
-                        title="Sửa môn học"
+              return (
+                <div
+                  key={c.id}
+                  className="glass-card rounded-3xl p-5 hover:border-[#007afc]/40 transition-all duration-200 flex flex-col justify-between group"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wider font-mono text-white"
+                        style={{ backgroundColor: c.color || '#007afc' }}
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          sound.playClick();
-                          if (window.confirm(`Xóa học phần ${c.name} và các bộ thẻ thuộc học phần này?`)) {
-                            deleteCourse(c.id);
-                          }
-                        }}
-                        className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition"
-                        title="Xóa môn học"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                        {c.code}
+                      </span>
+
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            sound.playClick();
+                            onEditCourse(c);
+                          }}
+                          className="p-1 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg transition"
+                          title="Sửa môn học"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            sound.playClick();
+                            if (window.confirm(`Xóa học phần ${c.name} và các bộ thẻ thuộc học phần này?`)) {
+                              deleteCourse(c.id);
+                            }
+                          }}
+                          className="p-1 text-slate-400 hover:text-rose-500 rounded-lg transition"
+                          title="Xóa môn học"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-snug line-clamp-1">
+                      {c.name}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
+                      {c.description}
+                    </p>
                   </div>
 
-                  <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-snug line-clamp-1">
-                    {c.name}
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed">
-                    {c.description}
-                  </p>
+                  <div className="pt-4 mt-4 border-t border-slate-200/50 dark:border-white/5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+                    <span>{courseSets.length} bộ &bull; {questionCount} câu</span>
+                    <button
+                      onClick={() => {
+                        sound.playClick();
+                        setSelectedCourseFilter(c.id);
+                      }}
+                      className="font-semibold text-[#007afc] dark:text-sky-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                    >
+                      <span>Xem bộ thẻ</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-
-                <div className="pt-4 mt-4 border-t border-slate-200/50 dark:border-white/5 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                  <span>{courseSets.length} bộ &bull; {questionCount} câu</span>
-                  <button
-                    onClick={() => {
-                      sound.playClick();
-                      setSelectedCourseFilter(c.id);
-                    }}
-                    className="font-semibold text-[#007afc] dark:text-sky-400 hover:underline flex items-center gap-0.5 cursor-pointer"
-                  >
-                    <span>Xem bộ thẻ</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 4. FLASHCARD & QUIZ SETS GRID */}

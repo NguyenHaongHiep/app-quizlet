@@ -1,6 +1,11 @@
 import { Course, StudySet } from '../types';
 
-export const INITIAL_COURSES: Course[] = [
+// Tài khoản mới luôn bắt đầu hoàn toàn trống 100% (không có dữ liệu mẫu mặc định)
+export const INITIAL_COURSES: Course[] = [];
+export const INITIAL_STUDY_SETS: StudySet[] = [];
+
+// Dữ liệu mẫu dùng khi người dùng chủ động chọn "Nạp dữ liệu mẫu thử nghiệm"
+export const DEMO_COURSES: Course[] = [
   {
     id: 'course-eng',
     code: 'ENG201',
@@ -43,7 +48,7 @@ export const INITIAL_COURSES: Course[] = [
   }
 ];
 
-export const INITIAL_STUDY_SETS: StudySet[] = [
+export const DEMO_STUDY_SETS: StudySet[] = [
   {
     id: 'set-eng-01',
     courseId: 'course-eng',
